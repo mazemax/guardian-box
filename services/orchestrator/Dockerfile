@@ -16,8 +16,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY app/ ./app/
 
-# Copy dashboard files (will be mounted in development)
-COPY --from=dashboard /app/dashboard ./dashboard/ 2>/dev/null || true
+# Dashboard files are mounted from ./dashboard by docker-compose
 RUN mkdir -p ./dashboard/templates ./dashboard/static/css ./dashboard/static/js
 
 # Create data directory
