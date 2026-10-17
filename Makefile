@@ -103,6 +103,20 @@ test-scenarios:
 	cd services/orchestrator && python -m pytest tests/test_scenarios.py -v --tb=short
 	$(COMPOSE) $(PROFILE_MOCK) down
 
+replay:
+	@echo "Running replay tests on sample clips..."
+	@echo "Note: Clips must be in ./samples/ (gitignored)"
+	python scripts/replay_test.py --samples-dir ./samples
+	@echo "Results written to docs/replay-results.md"
+
+replay-all:
+	@echo "Running full replay test suite..."
+	$(COMPOSE) $(PROFILE_MOCK) up -d
+	@sleep 10  # Wait for services to be ready
+	python scripts/replay_test.py --samples-dir ./samples
+	$(COMPOSE) $(PROFILE_MOCK) down
+	@echo "Results written to docs/replay-results.md"
+
 export-results:
 	@echo "Exporting test results..."
 	cd services/orchestrator && python -c "from tests.export_results import export; export()"

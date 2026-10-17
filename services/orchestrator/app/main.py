@@ -218,7 +218,9 @@ async def health_check():
     if MOCK_MODE:
         models = {k: True for k in models}
     
-    telegram_connected = bool(TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_IDS)
+    token = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    chat_ids = os.getenv("TELEGRAM_CHAT_IDS", "")
+    telegram_connected = bool(token and chat_ids)
     
     return {
         "status": "healthy" if all(models.values()) else "degraded",
@@ -226,6 +228,7 @@ async def health_check():
         "profile": DEMO_PROFILE,
         "models": models,
         "telegram_connected": telegram_connected,
+        "telegram_status": "live" if telegram_connected else ("needs_chat_id" if token else "mock"),
     }
 
 
@@ -647,12 +650,57 @@ async def proxy_vision_frame():
         raise HTTPException(status_code=503, detail="Vision service unavailable")
 
 
+# ===== Vision Source Endpoints =====
+
+@app.get("/api/v1/vision/sources")
+async def get_vision_sources():
+    """Get available video sources from vision service."""
+    if not http_client:
+        raise HTTPException(status_code=503, detail="HTTP client not initialized")
+    
+    try:
+        response = await http_client.get(f"{VISION_URL}/sources")
+        return response.json()
+    except httpx.RequestError as e:
+        logger.warning(f"Failed to get vision sources: {e}")
+        # Return local clips as fallback
+        return {"sources": list_sample_clips(), "current": ""}
+
+
 # ===== Telegram Endpoints =====
+
+def get_telegram_token() -> str:
+    """Get Telegram bot token from environment (re-reads at runtime)."""
+    return os.getenv("TELEGRAM_BOT_TOKEN", "")
+
+
+def get_telegram_chat_ids() -> list[str]:
+    """Get Telegram chat IDs from environment (re-reads at runtime)."""
+    chat_ids_str = os.getenv("TELEGRAM_CHAT_IDS", "")
+    return [cid.strip() for cid in chat_ids_str.split(",") if cid.strip()]
+
+
+@app.get("/api/v1/telegram/status")
+async def telegram_status():
+    """Get Telegram integration status."""
+    token = get_telegram_token()
+    chat_ids = get_telegram_chat_ids()
+    
+    if not token:
+        return {"status": "mock", "token_set": False, "chat_ids": []}
+    elif not chat_ids:
+        return {"status": "needs_chat_id", "token_set": True, "chat_ids": []}
+    else:
+        return {"status": "live", "token_set": True, "chat_ids_count": len(chat_ids)}
+
 
 @app.post("/api/v1/telegram/test")
 async def send_telegram_test():
     """Send a test message to configured Telegram chat(s)."""
-    if not TELEGRAM_BOT_TOKEN:
+    token = get_telegram_token()
+    chat_ids = get_telegram_chat_ids()
+    
+    if not token:
         # In mock mode, broadcast a telegram_preview SSE event
         await broadcast_sse("telegram_preview", {
             "type": "test",
@@ -662,10 +710,11 @@ async def send_telegram_test():
         })
         return {"status": "mock", "message": "Test message shown in dashboard preview"}
     
-    if not TELEGRAM_CHAT_IDS:
-        raise HTTPException(status_code=400, detail="TELEGRAM_CHAT_IDS not configured")
-    
-    chat_ids = [cid.strip() for cid in TELEGRAM_CHAT_IDS.split(",") if cid.strip()]
+    if not chat_ids:
+        return {
+            "status": "needs_chat_id",
+            "message": "Token is set but no chat IDs configured. Send /start to the bot to get your chat ID."
+        }
     
     test_message = (
         "🧪 *Test message from GuardianBox*\n\n"
@@ -677,7 +726,7 @@ async def send_telegram_test():
     for chat_id in chat_ids:
         try:
             response = await http_client.post(
-                f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                f"https://api.telegram.org/bot{token}/sendMessage",
                 json={
                     "chat_id": chat_id,
                     "text": test_message,
@@ -693,7 +742,7 @@ async def send_telegram_test():
     success_count = sum(1 for r in results if r.get("ok"))
     
     return {
-        "status": "sent" if success_count > 0 else "failed",
+        "status": "live" if success_count > 0 else "failed",
         "results": results,
         "sent": success_count,
         "total": len(chat_ids),

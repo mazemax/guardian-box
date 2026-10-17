@@ -178,24 +178,47 @@ class GuardianBoxDashboard {
             // Check Telegram mode
             const healthRes = await fetch('/api/v1/health');
             const health = await healthRes.json();
-            if (health.telegram_connected) {
-                this.telegramMode.textContent = 'Live';
-                this.telegramMode.classList.add('live');
-            }
+            this.updateTelegramMode(health.telegram_status || (health.telegram_connected ? 'live' : 'mock'));
         } catch (e) {
             console.error('Failed to fetch initial data:', e);
         }
     }
     
+    updateTelegramMode(status) {
+        if (!this.telegramMode) return;
+        
+        this.telegramMode.classList.remove('live');
+        
+        switch (status) {
+            case 'live':
+                this.telegramMode.textContent = 'Live';
+                this.telegramMode.classList.add('live');
+                break;
+            case 'needs_chat_id':
+                this.telegramMode.textContent = 'Needs Chat ID';
+                break;
+            default:
+                this.telegramMode.textContent = 'Mock Mode';
+        }
+    }
+    
     async loadClips() {
         try {
-            const res = await fetch('/api/v1/clips');
+            const res = await fetch('/api/v1/vision/sources');
             if (res.ok) {
-                this.clips = await res.json();
+                const data = await res.json();
+                this.clips = data.sources || [];
+                this.currentSource = data.current || '';
                 this.populateClipSelector();
+                
+                // If we have a current source, show the stream
+                if (this.currentSource) {
+                    this.startVideoStream();
+                }
             }
         } catch (e) {
-            console.log('No clips endpoint available');
+            console.log('Vision sources not available, using defaults');
+            this.populateClipSelector();
         }
     }
     
@@ -206,14 +229,28 @@ class GuardianBoxDashboard {
         
         // Default clip labels (used if API doesn't provide names)
         const defaultClips = [
-            { path: 'samples/clip1.mp4', name: 'clip1 — Slow collapse (chest pain) → Alert' },
-            { path: 'samples/clip2.mp4', name: 'clip2 — Fast fall (walker) → Alert' },
-            { path: 'samples/clip3.mp4', name: 'clip3 — Prayer (sujud) → Quiet' },
-            { path: 'samples/clip4.mp4', name: 'clip4 — Slow collapse (dizzy) → Alert' },
-            { path: 'samples/clip5.mp4', name: 'clip5 — Normal walking → Quiet' },
+            { path: '/samples/clip1.mp4', name: 'clip1 — Slow collapse (chest pain) → Alert' },
+            { path: '/samples/clip2.mp4', name: 'clip2 — Fast fall (walker) → Alert' },
+            { path: '/samples/clip3.mp4', name: 'clip3 — Prayer (sujud) → Quiet' },
+            { path: '/samples/clip4.mp4', name: 'clip4 — Slow collapse (dizzy) → Alert' },
+            { path: '/samples/clip5.mp4', name: 'clip5 — Normal walking → Quiet' },
         ];
         
-        const clipsToUse = this.clips.length > 0 ? this.clips : defaultClips;
+        // Map clips from API to include labels
+        const clipLabels = {
+            'clip1': 'clip1 — Slow collapse (chest pain) → Alert',
+            'clip2': 'clip2 — Fast fall (walker) → Alert',
+            'clip3': 'clip3 — Prayer (sujud) → Quiet',
+            'clip4': 'clip4 — Slow collapse (dizzy) → Alert',
+            'clip5': 'clip5 — Normal walking → Quiet',
+        };
+        
+        const clipsWithLabels = this.clips.map(clip => ({
+            ...clip,
+            name: clipLabels[clip.name] || clip.name || clip.path,
+        }));
+        
+        const clipsToUse = clipsWithLabels.length > 0 ? clipsWithLabels : defaultClips;
         
         if (clipsToUse.length > 0) {
             const group = document.createElement('optgroup');
