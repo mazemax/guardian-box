@@ -1,11 +1,11 @@
-﻿# GuardianBox
+# GuardianBox
 
-**Local fall detection and voice check-in for elderly parents â€” the video never leaves the house.**
+**Local fall detection and voice check-in for elderly parents — the video never leaves the house.**
 
 **Team:** Token Titans
 
 <p align="center">
-  <strong>ACE 2026 Mini Hackathon â€” "LOCAL AI, REAL PROBLEMS"</strong>
+  <strong>ACE 2026 Mini Hackathon — "LOCAL AI, REAL PROBLEMS"</strong>
 </p>
 
 ---
@@ -28,9 +28,9 @@ Many elderly parents in Malaysia live alone while their children work in another
 |---|---|
 | Panic-button pendant | Only works if worn and pressed |
 | Smartwatch fall detection | Needs charging and remembering to wear |
-| Cloud CCTV | Family or company servers can watch 24/7 â€” many elderly refuse |
+| Cloud CCTV | Family or company servers can watch 24/7 — many elderly refuse |
 
-**GuardianBox solves this differently:** a camera watches the living area, but **the video never leaves the house**. All AI runs locally on an NVIDIA DGX Spark. Only a **sentence of text** ever goes out â€” to Telegram, to tell family someone may need help.
+**GuardianBox solves this differently:** a camera watches the living area, but **the video never leaves the house**. All AI runs locally on an NVIDIA DGX Spark. Only a **sentence of text** ever goes out — to Telegram, to tell family someone may need help.
 
 ---
 
@@ -59,7 +59,7 @@ flowchart TD
 4. **STT listens** in Malay, English, or Chinese
 5. Based on the reply (or silence), either stand down or **send a text alert** to family on Telegram
 
-**Prayer-aware**: Sujud (prostration) looks like lying on the floor. The VLM recognizes prayer and stays silent â€” never interrupting.
+**Prayer-aware**: Sujud (prostration) looks like lying on the floor. The VLM recognizes prayer and stays silent — never interrupting.
 
 ---
 
@@ -126,9 +126,9 @@ Only one line of text ever leaves the box. Video, frames and audio stay on the A
 
 | Language | STT | TTS | Keywords | Notes |
 |---|---|---|---|---|
-| Bahasa Melayu | âœ… Malaysian Whisper | Pre-rendered clips | âœ… Full | Family recording recommended |
-| English | âœ… | âœ… Kokoro (grade A) | âœ… Full | |
-| Mandarin | âœ… | âœ… Kokoro (grade D) | âœ… Full | Dialects (Hokkien/Cantonese) via family clips only |
+| Bahasa Melayu | ✅ Malaysian Whisper | Pre-rendered clips | ✅ Full | Family recording recommended |
+| English | ✅ | ✅ Kokoro (grade A) | ✅ Full | |
+| Mandarin | ✅ | ✅ Kokoro (grade D) | ✅ Full | Dialects (Hokkien/Cantonese) via family clips only |
 
 ---
 
@@ -201,11 +201,11 @@ open http://localhost:8080/setup
 
 ## Privacy Guarantees
 
-1. **No video leaves the box** â€” Model containers are on an internal Docker network with no external route
-2. **No video stored** â€” Frames live only in RAM; tmpfs for VLM inputs; deleted after each event
-3. **Text-only alerts** â€” Payload guard blocks `sendPhoto`, `sendVideo`, `sendAudio`, etc. at the code level
-4. **Egress allowlist** â€” Only `api.telegram.org` can be reached from the notifier
-5. **Egress counter** â€” Dashboard shows exactly how many bytes have left the box
+1. **No video leaves the box** — Model containers are on an internal Docker network with no external route
+2. **No video stored** — Frames live only in RAM; tmpfs for VLM inputs; deleted after each event
+3. **Text-only alerts** — Payload guard blocks `sendPhoto`, `sendVideo`, `sendAudio`, etc. at the code level
+4. **Egress allowlist** — Only `api.telegram.org` can be reached from the notifier
+5. **Egress counter** — Dashboard shows exactly how many bytes have left the box
 
 **How to verify:**
 ```bash
@@ -217,24 +217,24 @@ curl http://localhost:8080/api/v1/egress
 
 ---
 
-## Decision Table (PRD Â§11)
+## Decision Table (PRD §11)
 
 The orchestrator follows this deterministic policy. The agent can add actions but **cannot override an ALERT into STAND_DOWN**.
 
 | # | VLM Result | Check-in Outcome | Decision |
 |---|---|---|---|
-| D1 | Prayer (sujud/other), conf â‰¥ 0.7 | â€” | **Stand down silently** (watchdog 3 min) |
-| D2 | Non-fall activity, conf â‰¥ 0.7, no rapid descent | â€” | **Stand down** |
-| D3 | Non-fall, but rapid descent preceded | â€” | **Soft check-in** (1 prompt) |
-| D4 | Fall / unclear / low conf / VLM error | â€” | **Full check-in** (3 attempts) |
-| D5 | â€” | "I'm fine" + gets up | **Stand down** |
-| D6 | â€” | "I'm fine" + still on floor 2 min | **Re-check** â†’ if stuck, alert |
-| D7 | â€” | Help / pain / can't get up | **Alert immediately** |
-| D8 | â€” | No response Ã— 3 | **Alert** (no response) |
-| D9 | â€” | Unclear Ã— 3 | **Alert** (needs check) |
-| D10 | â€” | â€” (internet down) | **Queue + local siren** |
-| D11 | â€” | â€” (no ack 3 min) | **Escalate** to contact 2 |
-| D12 | â€” (paused) | â€” | **No detection** |
+| D1 | Prayer (sujud/other), conf ≥ 0.7 | — | **Stand down silently** (watchdog 3 min) |
+| D2 | Non-fall activity, conf ≥ 0.7, no rapid descent | — | **Stand down** |
+| D3 | Non-fall, but rapid descent preceded | — | **Soft check-in** (1 prompt) |
+| D4 | Fall / unclear / low conf / VLM error | — | **Full check-in** (3 attempts) |
+| D5 | — | "I'm fine" + gets up | **Stand down** |
+| D6 | — | "I'm fine" + still on floor 2 min | **Re-check** → if stuck, alert |
+| D7 | — | Help / pain / can't get up | **Alert immediately** |
+| D8 | — | No response × 3 | **Alert** (no response) |
+| D9 | — | Unclear × 3 | **Alert** (needs check) |
+| D10 | — | — (internet down) | **Queue + local siren** |
+| D11 | — | — (no ack 3 min) | **Escalate** to contact 2 |
+| D12 | — (paused) | — | **No detection** |
 
 ---
 
@@ -243,11 +243,11 @@ The orchestrator follows this deterministic policy. The agent can add actions bu
 ### Unit Tests
 
 ```
-tests/test_decision_table.py    âœ“ 20 passed
-tests/test_keywords.py          âœ“ 35 passed
-tests/test_state_machine.py     âœ“ 18 passed
-tests/test_payload_guard.py     âœ“ 15 passed
-â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+tests/test_decision_table.py    ✓ 20 passed
+tests/test_keywords.py          ✓ 35 passed
+tests/test_state_machine.py     ✓ 18 passed
+tests/test_payload_guard.py     ✓ 15 passed
+────────────────────────────────────────────
 TOTAL                           88 passed
 ```
 
@@ -255,25 +255,25 @@ TOTAL                           88 passed
 
 | # | Scenario | Expected | Actual | Pass |
 |---|---|---|---|---|
-| F1 | Walk, sit on chair | No trigger | No trigger | âœ… |
-| F2 | Prayer cycle (sujud) | D1 stand down | D1 stand down | âœ… |
-| F3 | Kneel to pick up object | D2/no event | D2 stand down | âœ… |
-| F4 | Sit on floor 1 min | D2 + watchdog | D2 + watchdog | âœ… |
-| F5 | Lie on sofa | Nothing | Nothing | âœ… |
-| T1 | Fall + silence | D8 alert | D8 alert | âœ… |
-| T2 | Fall + "tolong sakit" | D7 alert | D7 alert | âœ… |
-| T3 | Fall + "I'm fine" + gets up | D5 stand down | D5 stand down | âœ… |
+| F1 | Walk, sit on chair | No trigger | No trigger | ✅ |
+| F2 | Prayer cycle (sujud) | D1 stand down | D1 stand down | ✅ |
+| F3 | Kneel to pick up object | D2/no event | D2 stand down | ✅ |
+| F4 | Sit on floor 1 min | D2 + watchdog | D2 + watchdog | ✅ |
+| F5 | Lie on sofa | Nothing | Nothing | ✅ |
+| T1 | Fall + silence | D8 alert | D8 alert | ✅ |
+| T2 | Fall + "tolong sakit" | D7 alert | D7 alert | ✅ |
+| T3 | Fall + "I'm fine" + gets up | D5 stand down | D5 stand down | ✅ |
 
 ---
 
 ## Limitations
 
 **Honest limits (v1):**
-- **Living areas only** â€” No bathroom coverage (privacy concerns)
-- **One resident** â€” Multiple people may trigger false events
-- **Lighting dependent** â€” Poor performance in very low light
-- **Not a medical device** â€” Does not diagnose or replace 999
-- **3-second latency** â€” VLM confirmation takes time (TBM on hardware)
+- **Living areas only** — No bathroom coverage (privacy concerns)
+- **One resident** — Multiple people may trigger false events
+- **Lighting dependent** — Poor performance in very low light
+- **Not a medical device** — Does not diagnose or replace 999
+- **3-second latency** — VLM confirmation takes time (TBM on hardware)
 
 **Roadmap (post-hackathon):**
 - Inactivity detection ("no movement for 2 hours")
@@ -288,9 +288,9 @@ TOTAL                           88 passed
 
 1. **Problem** (0:00-0:35): "Who has a parent living alone? The fear is a fall nobody notices."
 2. **Local AI claim** (0:35-1:00): Point at "No video leaves this box" banner, egress counter at 0
-3. **Beat 1** (1:00-1:25): Walk across â†’ nothing happens (correct)
-4. **Beat 2** (1:25-2:10): Sujud on prayer mat â†’ VLM: "prayer_sujud" â†’ no alert, no voice
-5. **Beat 3** (2:10-3:20): Collapse â†’ check-in Ã— 3 â†’ silence â†’ Telegram alert â†’ tap "I'm calling"
+3. **Beat 1** (1:00-1:25): Walk across → nothing happens (correct)
+4. **Beat 2** (1:25-2:10): Sujud on prayer mat → VLM: "prayer_sujud" → no alert, no voice
+5. **Beat 3** (2:10-3:20): Collapse → check-in × 3 → silence → Telegram alert → tap "I'm calling"
 6. **Egress proof** (3:20-3:50): Show egress log: text bytes only, video bytes 0
 7. **Limits + close** (3:50-5:00): Honest limits, roadmap, "Watching over, without watching"
 
@@ -298,13 +298,13 @@ TOTAL                           88 passed
 
 ## API Reference
 
-See [PRD Â§15](docs/GuardianBox-PRD.md#15-local-api) for the full API specification.
+See [PRD §15](docs/GuardianBox-PRD.md#15-local-api) for the full API specification.
 
 **Key endpoints:**
-- `GET /api/v1/health` â€” Service health
-- `GET /api/v1/status` â€” Current system state
-- `GET /api/v1/stream` â€” SSE for real-time updates
-- `POST /api/v1/demo/pose-trigger` â€” Trigger a test event
+- `GET /api/v1/health` — Service health
+- `GET /api/v1/status` — Current system state
+- `GET /api/v1/stream` — SSE for real-time updates
+- `POST /api/v1/demo/pose-trigger` — Trigger a test event
 
 ---
 
@@ -312,26 +312,26 @@ See [PRD Â§15](docs/GuardianBox-PRD.md#15-local-api) for the full API specific
 
 ```
 guardianbox/
-â”œâ”€â”€ README.md
-â”œâ”€â”€ LICENSE                      # AGPL-3.0
-â”œâ”€â”€ docker-compose.yml
-â”œâ”€â”€ Makefile
-â”œâ”€â”€ .env.example
-â”œâ”€â”€ services/
-â”‚   â”œâ”€â”€ orchestrator/            # FastAPI, state machine, decision table
-â”‚   â”œâ”€â”€ vision/                  # YOLO26n-pose (+ mock)
-â”‚   â”œâ”€â”€ stt/                     # Malaysian Whisper (+ mock)
-â”‚   â”œâ”€â”€ voice/                   # Clips + Kokoro (+ mock)
-â”‚   â”œâ”€â”€ notifier/                # Telegram with payload guard
-â”‚   â””â”€â”€ egress-proxy/            # Allowlist + byte counter
-â”œâ”€â”€ dashboard/                   # Vanilla JS + SSE
-â”œâ”€â”€ schemas/                     # JSON schemas
-â”œâ”€â”€ phrases/                     # Voice scripts (ms/en/zh)
-â”œâ”€â”€ prompts/                     # VLM prompts (versioned)
-â”œâ”€â”€ tests/                       # Unit + scenario tests
-â””â”€â”€ docs/
-    â”œâ”€â”€ GuardianBox-PRD.md
-    â””â”€â”€ GuardianBox-UX-spec.md
+├── README.md
+├── LICENSE                      # AGPL-3.0
+├── docker-compose.yml
+├── Makefile
+├── .env.example
+├── services/
+│   ├── orchestrator/            # FastAPI, state machine, decision table
+│   ├── vision/                  # YOLO26n-pose (+ mock)
+│   ├── stt/                     # Malaysian Whisper (+ mock)
+│   ├── voice/                   # Clips + Kokoro (+ mock)
+│   ├── notifier/                # Telegram with payload guard
+│   └── egress-proxy/            # Allowlist + byte counter
+├── dashboard/                   # Vanilla JS + SSE
+├── schemas/                     # JSON schemas
+├── phrases/                     # Voice scripts (ms/en/zh)
+├── prompts/                     # VLM prompts (versioned)
+├── tests/                       # Unit + scenario tests
+└── docs/
+    ├── GuardianBox-PRD.md
+    └── GuardianBox-UX-spec.md
 ```
 
 ---
@@ -348,13 +348,13 @@ guardianbox/
 
 ## Team
 
-**ACE 2026 Mini Hackathon â€” Max Saad + team**
+**ACE 2026 Mini Hackathon — Max Saad + team**
 
 ---
 
 ## Licence
 
-AGPL-3.0 â€” See [LICENSE](LICENSE)
+AGPL-3.0 — See [LICENSE](LICENSE)
 
 This licence is compatible with Ultralytics YOLO. For commercial closed-source use, consider MediaPipe (Apache-2.0) or an Ultralytics Enterprise licence.
 
