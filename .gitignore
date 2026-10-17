@@ -109,3 +109,7 @@ tests/fixtures/sensitive/
 tmp/
 temp/
 *.tmp
+
+# README screenshots
+!docs/screenshots/
+!docs/screenshots/*.png
