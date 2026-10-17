@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://guardianbox.local/schemas/reply-intent.v1.json",
+  "title": "Reply Intent Classification",
+  "description": "Classification of check-in replies (PRD §FR-AGT-3)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["intent", "confidence"],
+  "properties": {
+    "intent": {
+      "enum": [
+        "ok_no_help",
+        "needs_help",
+        "pain_or_injury",
+        "cannot_get_up",
+        "call_family",
+        "unclear",
+        "no_response"
+      ],
+      "description": "Classified intent of the reply"
+    },
+    "language": {
+      "enum": ["ms", "en", "zh", null],
+      "description": "Detected language of the reply"
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Classification confidence"
+    },
+    "quote": {
+      "type": ["string", "null"],
+      "maxLength": 60,
+      "description": "Short quote from the transcript (may appear in alerts)"
+    },
+    "keyword_hit": {
+      "type": ["string", "null"],
+      "description": "Keyword that triggered classification (if any)"
+    },
+    "had_negation": {
+      "type": "boolean",
+      "description": "Whether a negation was detected near the keyword"
+    }
+  }
+}

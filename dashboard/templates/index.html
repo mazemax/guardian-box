@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GuardianBox Dashboard</title>
+    <link rel="stylesheet" href="/static/css/dashboard.css">
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-left">
+            <span class="logo">◉</span>
+            <span class="brand">GuardianBox</span>
+            <span class="state-chip" id="state-chip">MONITORING</span>
+            <span class="privacy-banner" title="Frames stay in memory on this DGX Spark and are deleted after each check. Only text alerts go to Telegram.">
+                🔒 No video leaves this box
+            </span>
+        </div>
+        <div class="header-right">
+            <span class="egress-counter" id="egress-counter">
+                ↑ Egress today: <span id="egress-msgs">0</span> msgs · <span id="egress-bytes">0</span> B
+            </span>
+            <span class="internet-chip" id="internet-chip">🌐 Internet OK</span>
+            <span class="gpu-chip" id="gpu-chip">▤ ATOM <span id="memory-used">74</span>/<span id="memory-total">128</span> GB · GPU <span id="gpu-util">18</span>%</span>
+            <button class="presenter-btn" id="presenter-btn" title="Toggle presenter mode">⏻ Presenter</button>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <!-- Left Panel: Skeleton View -->
+        <section class="panel skeleton-panel">
+            <h2>Skeleton View (no video)</h2>
+            <div class="skeleton-view" id="skeleton-view">
+                <svg viewBox="0 0 400 300" class="skeleton-svg">
+                    <!-- Floor line -->
+                    <line x1="0" y1="250" x2="400" y2="250" stroke="#3b82f6" stroke-width="2" stroke-dasharray="5,5"/>
+                    <text x="10" y="265" fill="#64748b" font-size="12">floor</text>
+                    
+                    <!-- Skeleton figure (updated by JS) -->
+                    <g id="skeleton-figure" transform="translate(200, 150)">
+                        <!-- Head -->
+                        <circle cx="0" cy="-60" r="15" fill="none" stroke="#22c55e" stroke-width="3"/>
+                        <!-- Torso -->
+                        <line x1="0" y1="-45" x2="0" y2="20" stroke="#22c55e" stroke-width="3"/>
+                        <!-- Arms -->
+                        <line x1="0" y1="-30" x2="-40" y2="0" stroke="#22c55e" stroke-width="3"/>
+                        <line x1="0" y1="-30" x2="40" y2="0" stroke="#22c55e" stroke-width="3"/>
+                        <!-- Legs -->
+                        <line x1="0" y1="20" x2="-25" y2="80" stroke="#22c55e" stroke-width="3"/>
+                        <line x1="0" y1="20" x2="25" y2="80" stroke="#22c55e" stroke-width="3"/>
+                    </g>
+                    
+                    <!-- Zone labels -->
+                    <rect x="320" y="180" width="70" height="60" fill="none" stroke="#8b5cf6" stroke-width="2" rx="4"/>
+                    <text x="330" y="215" fill="#8b5cf6" font-size="11">sofa</text>
+                </svg>
+                <div class="skeleton-info" id="skeleton-info">
+                    zone: floor · torso 12° · still 0 s
+                </div>
+            </div>
+            
+            <!-- Event Status Card -->
+            <div class="event-card" id="event-card">
+                <div class="event-header">
+                    <span class="event-label">State:</span>
+                    <span class="event-state" id="event-state">MONITORING</span>
+                </div>
+                <div class="event-detail" id="event-detail">
+                    All quiet. GuardianBox is watching the living room.
+                </div>
+                <div class="event-actions" id="event-actions" style="display: none;">
+                    <select id="simulate-reply">
+                        <option value="">Simulate reply...</option>
+                        <option value="silence">Silence</option>
+                        <option value="ok_malay">OK (Malay)</option>
+                        <option value="ok_english">OK (English)</option>
+                        <option value="help_malay">Help (Malay)</option>
+                        <option value="unclear">Unclear</option>
+                    </select>
+                </div>
+            </div>
+        </section>
+
+        <!-- Right Panel: Pipeline Timeline -->
+        <section class="panel timeline-panel">
+            <h2>Pipeline Timeline</h2>
+            <div class="model-count" id="model-count">
+                5 AI roles · 4 models on this ATOM · 0 cloud AI calls
+            </div>
+            <div class="timeline" id="timeline">
+                <div class="timeline-empty">
+                    Events will appear here when activity is detected.
+                </div>
+            </div>
+            <div class="timeline-actions">
+                <button class="action-btn" id="export-btn">Export event.json</button>
+            </div>
+        </section>
+
+        <!-- Bottom Panel: ATOM Panel -->
+        <section class="panel atom-panel">
+            <h2>ATOM Panel</h2>
+            <div class="atom-grid">
+                <div class="atom-metric">
+                    <span class="metric-label">Memory</span>
+                    <div class="metric-bar">
+                        <div class="metric-fill" id="memory-bar" style="width: 58%"></div>
+                    </div>
+                    <span class="metric-value"><span id="memory-val">74</span>/128 GB</span>
+                </div>
+                <div class="atom-metric">
+                    <span class="metric-label">GPU</span>
+                    <div class="metric-bar">
+                        <div class="metric-fill gpu" id="gpu-bar" style="width: 18%"></div>
+                    </div>
+                    <span class="metric-value"><span id="gpu-val">18</span>%</span>
+                </div>
+                <div class="atom-models" id="atom-models">
+                    <div class="model-item active">● Nemotron Omni (vLLM) ~45 GB</div>
+                    <div class="model-item active">● YOLO26n-pose ~2 GB</div>
+                    <div class="model-item active">● Malaysian Whisper ~4 GB</div>
+                    <div class="model-item active">● Kokoro-82M ~1.5 GB</div>
+                </div>
+                <div class="egress-detail">
+                    <span>Video bytes out: <strong id="video-bytes">0</strong></span>
+                    <span>Image bytes out: <strong id="image-bytes">0</strong></span>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Demo Controls (presenter mode) -->
+    <aside class="demo-controls" id="demo-controls" style="display: none;">
+        <h3>Demo Controls</h3>
+        <div class="demo-buttons">
+            <button class="demo-btn" data-scenario="fall">🚨 Trigger Fall</button>
+            <button class="demo-btn" data-scenario="prayer">🕌 Trigger Prayer</button>
+            <button class="demo-btn" data-scenario="sitting">🪑 Trigger Sitting</button>
+            <button class="demo-btn" id="ack-btn">✅ Simulate Ack</button>
+            <button class="demo-btn" id="offline-btn">📴 Simulate Offline</button>
+        </div>
+        <div class="demo-profile">
+            <label>
+                <input type="radio" name="profile" value="home" checked> Home (10s stillness)
+            </label>
+            <label>
+                <input type="radio" name="profile" value="demo"> Demo (3s stillness)
+            </label>
+        </div>
+    </aside>
+
+    <script src="/static/js/dashboard.js"></script>
+</body>
+</html>

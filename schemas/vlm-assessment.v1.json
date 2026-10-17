@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://guardianbox.local/schemas/vlm-assessment.v1.json",
+  "title": "VLM Assessment",
+  "description": "VLM output schema for fall confirmation (PRD §FR-VLM-3)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["person_visible", "scene_class", "posture", "movement", "fall_likelihood", "confidence", "description"],
+  "properties": {
+    "person_visible": {
+      "type": "boolean",
+      "description": "Whether a person is visible in the frames"
+    },
+    "scene_class": {
+      "enum": [
+        "fall",
+        "lying_on_floor_unclear_cause",
+        "prayer_sujud",
+        "prayer_other_position",
+        "kneeling_to_pick_up_or_reach",
+        "sitting_on_floor_resting",
+        "gardening_or_floor_work",
+        "lying_on_sofa_or_bed",
+        "exercising_or_stretching",
+        "no_person_or_unclear"
+      ],
+      "description": "Classification of the scene"
+    },
+    "posture": {
+      "enum": [
+        "standing",
+        "sitting_chair",
+        "sitting_floor",
+        "kneeling",
+        "prostrate_forehead_down",
+        "lying_floor",
+        "lying_furniture",
+        "crouching",
+        "unknown"
+      ],
+      "description": "Body posture classification"
+    },
+    "on_prayer_mat_or_area": {
+      "type": "boolean",
+      "description": "Whether the person is on a prayer mat or designated prayer area"
+    },
+    "movement": {
+      "enum": ["none_visible", "small", "purposeful"],
+      "description": "Level of movement observed"
+    },
+    "distress_signs": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "enum": [
+          "not_moving",
+          "awkward_limb_position",
+          "face_down_not_prayer",
+          "object_knocked_over",
+          "near_furniture_edge",
+          "holding_body_part"
+        ]
+      },
+      "description": "Signs of potential distress"
+    },
+    "fall_likelihood": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Probability that this is a fall (0-1)"
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Model confidence in the classification (0-1)"
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 160,
+      "description": "Short neutral description of the scene (may appear in alerts)"
+    },
+    "reasons": {
+      "type": "array",
+      "maxItems": 4,
+      "items": {
+        "type": "string",
+        "maxLength": 80
+      },
+      "description": "Reasons for the classification"
+    }
+  }
+}

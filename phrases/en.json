@@ -1,0 +1,59 @@
+{
+  "language": "en",
+  "language_name": "English (Malaysian)",
+  "phrases": {
+    "soft": {
+      "text": "{H} {N}, are you okay?",
+      "notes": "Soft check - gentle, normal volume",
+      "duration_ms": 2000
+    },
+    "checkin_1": {
+      "text": "{H} {N}, are you okay? If you need help, say 'help'.",
+      "notes": "First check-in attempt",
+      "duration_ms": 4000
+    },
+    "checkin_2": {
+      "text": "{H} {N}! Are you okay? Say 'okay', or 'help'.",
+      "notes": "Louder and slower than checkin_1",
+      "duration_ms": 4000
+    },
+    "checkin_3": {
+      "text": "{H}, I want to make sure you're safe. If you can, say 'okay'.",
+      "notes": "Final attempt - more explicit",
+      "duration_ms": 4000
+    },
+    "ack_ok": {
+      "text": "Okay, {H}. I'm here if you need anything.",
+      "notes": "Spoken when resident confirms they're OK",
+      "duration_ms": 3000
+    },
+    "recheck": {
+      "text": "{H}, can you get up by yourself? Say 'yes' or 'no'.",
+      "notes": "D6 - asking if can get up after saying OK but still on floor",
+      "duration_ms": 4000
+    },
+    "alert_sent": {
+      "text": "I've told {C}. Help is coming. Don't force yourself to get up if it hurts.",
+      "notes": "Reassurance after sending alert",
+      "duration_ms": 5000
+    },
+    "alert_ack": {
+      "text": "{C} is calling you now.",
+      "notes": "When family presses 'I'm calling now'",
+      "duration_ms": 2000
+    },
+    "offline": {
+      "text": "I'm trying to reach your family. I'll sound an alarm so the neighbours can hear.",
+      "notes": "D10 - internet down, local alarm will sound",
+      "duration_ms": 5000
+    }
+  },
+  "keywords": {
+    "ok_no_help": ["okay", "ok", "i'm fine", "im fine", "i am fine", "i'm okay", "im okay", "i am okay", "no problem", "yes", "all good", "fine", "good", "alright"],
+    "needs_help": ["help", "help me", "please help", "i need help", "need help"],
+    "pain_or_injury": ["pain", "it hurts", "hurt", "hurts", "injured", "injury", "ow", "ouch", "aching", "sore"],
+    "cannot_get_up": ["can't get up", "cant get up", "cannot get up", "can't stand", "cant stand", "cannot stand", "can't move", "cant move", "cannot move"],
+    "call_family": ["call my son", "call my daughter", "call my family", "call someone", "phone my"],
+    "negation": ["not", "no", "don't", "doesn't", "never", "wasn't", "isn't", "aren't", "weren't"]
+  }
+}

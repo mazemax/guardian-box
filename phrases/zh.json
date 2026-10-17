@@ -1,0 +1,69 @@
+{
+  "language": "zh",
+  "language_name": "Chinese (Mandarin)",
+  "pinyin_provided": true,
+  "phrases": {
+    "soft": {
+      "text": "{H}，你还好吗？",
+      "pinyin": "{H}, nǐ hái hǎo ma?",
+      "notes": "Soft check - gentle, normal volume",
+      "duration_ms": 2000
+    },
+    "checkin_1": {
+      "text": "{H}，你还好吗？需要帮忙的话，就说"帮忙"。",
+      "pinyin": "{H}, nǐ hái hǎo ma? Xūyào bāngmáng de huà, jiù shuō 'bāngmáng'.",
+      "notes": "First check-in attempt",
+      "duration_ms": 4000
+    },
+    "checkin_2": {
+      "text": "{H}！你还好吗？说"没事"，或者"帮忙"。",
+      "pinyin": "{H}! Nǐ hái hǎo ma? Shuō 'méishì', huòzhě 'bāngmáng'.",
+      "notes": "Louder and slower than checkin_1",
+      "duration_ms": 4000
+    },
+    "checkin_3": {
+      "text": "{H}，我想确定你安全。可以的话，说"没事"。",
+      "pinyin": "{H}, wǒ xiǎng quèdìng nǐ ānquán. Kěyǐ de huà, shuō 'méishì'.",
+      "notes": "Final attempt - more explicit",
+      "duration_ms": 4000
+    },
+    "ack_ok": {
+      "text": "好的，{H}。有需要的话我在这里。",
+      "pinyin": "Hǎo de, {H}. Yǒu xūyào de huà wǒ zài zhèlǐ.",
+      "notes": "Spoken when resident confirms they're OK",
+      "duration_ms": 3000
+    },
+    "recheck": {
+      "text": "{H}，你自己可以起来吗？说"可以"或者"不可以"。",
+      "pinyin": "{H}, nǐ zìjǐ kěyǐ qǐlái ma? Shuō 'kěyǐ' huòzhě 'bù kěyǐ'.",
+      "notes": "D6 - asking if can get up after saying OK but still on floor",
+      "duration_ms": 4000
+    },
+    "alert_sent": {
+      "text": "我已经通知{C}了，有人会来帮你。会痛的话，不要勉强起来。",
+      "pinyin": "Wǒ yǐjīng tōngzhī {C} le, yǒu rén huì lái bāng nǐ. Huì tòng de huà, bùyào miǎnqiǎng qǐlái.",
+      "notes": "Reassurance after sending alert",
+      "duration_ms": 5000
+    },
+    "alert_ack": {
+      "text": "{C}现在打电话给你。",
+      "pinyin": "{C} xiànzài dǎ diànhuà gěi nǐ.",
+      "notes": "When family presses 'I'm calling now'",
+      "duration_ms": 2000
+    },
+    "offline": {
+      "text": "我正在联系你的家人，我会响警报让邻居听到。",
+      "pinyin": "Wǒ zhèngzài liánxì nǐ de jiārén, wǒ huì xiǎng jǐngbào ràng línjū tīngdào.",
+      "notes": "D10 - internet down, local alarm will sound",
+      "duration_ms": 5000
+    }
+  },
+  "keywords": {
+    "ok_no_help": ["没事", "我没事", "还好", "好", "可以", "无事", "没问题", "我很好", "我好", "好的", "行"],
+    "needs_help": ["帮忙", "救命", "帮我", "救我", "需要帮助", "帮帮我"],
+    "pain_or_injury": ["痛", "好痛", "受伤", "疼", "很痛", "伤了"],
+    "cannot_get_up": ["起不来", "站不起来", "不可以", "动不了", "爬不起来"],
+    "call_family": ["打电话给", "叫我女儿", "叫我儿子", "通知家人"],
+    "negation": ["不", "没", "无", "别"]
+  }
+}

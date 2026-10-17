@@ -1,0 +1,175 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://guardianbox.local/schemas/event.v1.json",
+  "title": "Detection Event",
+  "description": "A detection event from trigger to resolution (PRD §14)",
+  "type": "object",
+  "required": ["id", "trigger", "state", "started_at"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique event identifier"
+    },
+    "resident_id": {
+      "type": "string",
+      "description": "ID of the resident being monitored"
+    },
+    "camera_id": {
+      "type": "string",
+      "description": "ID of the camera that triggered the event"
+    },
+    "trigger": {
+      "enum": ["fast_fall", "slow_low_posture", "watchdog", "manual_test"],
+      "description": "What triggered the event"
+    },
+    "state": {
+      "enum": [
+        "MONITORING",
+        "SUSPECTED",
+        "CONFIRMING",
+        "STOOD_DOWN",
+        "CHECKING_IN",
+        "LISTENING",
+        "DECIDING",
+        "RECHECK",
+        "ALERTING",
+        "ALERT_QUEUED",
+        "AWAITING_ACK",
+        "ESCALATING",
+        "RESOLVED",
+        "CAMERA_LOST",
+        "PAUSED"
+      ],
+      "description": "Current state of the event"
+    },
+    "decision_row": {
+      "type": ["string", "null"],
+      "pattern": "^D(1[0-2]|[1-9])$",
+      "description": "Decision table row applied (D1-D12)"
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the event started (UTC)"
+    },
+    "resolved_at": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "When the event was resolved (UTC)"
+    },
+    "pose_summary": {
+      "type": ["object", "null"],
+      "description": "Pose feature summary (numbers only, no images)",
+      "properties": {
+        "torso_angle": {"type": "number"},
+        "head_height_ratio": {"type": "number"},
+        "hip_descent_ratio": {"type": "number"},
+        "stillness_seconds": {"type": "number"},
+        "motion_energy": {"type": "number"},
+        "prayer_cycles": {"type": "integer"},
+        "rapid_descent": {"type": "boolean"},
+        "zone": {"type": "string"}
+      }
+    },
+    "vlm_assessment": {
+      "$ref": "vlm-assessment.v1.json",
+      "description": "VLM classification result"
+    },
+    "vlm_latency_ms": {
+      "type": "integer",
+      "description": "VLM inference latency in milliseconds"
+    },
+    "vlm_valid": {
+      "type": "boolean",
+      "description": "Whether VLM returned valid JSON"
+    },
+    "vlm_attempts": {
+      "type": "integer",
+      "description": "Number of VLM call attempts"
+    },
+    "check_in_attempts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "n": {"type": "integer"},
+          "phrase_id": {"type": "string"},
+          "lang": {"type": "string"},
+          "played_at": {"type": "string", "format": "date-time"},
+          "listen_ms": {"type": "integer"},
+          "vad_speech_ms": {"type": "integer"},
+          "transcript": {"type": ["string", "null"]},
+          "detected_lang": {"type": ["string", "null"]},
+          "intent": {"type": ["string", "null"]},
+          "confidence": {"type": "number"},
+          "keyword_hit": {"type": ["string", "null"]}
+        }
+      },
+      "description": "Check-in attempt records"
+    },
+    "alerts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string"},
+          "contact_id": {"type": "string"},
+          "contact_name": {"type": "string"},
+          "level": {"enum": ["urgent", "needs_help", "needs_check", "system"]},
+          "text": {"type": "string", "maxLength": 1024},
+          "telegram_message_id": {"type": ["integer", "null"]},
+          "status": {"enum": ["queued", "sent", "failed", "delayed_sent"]},
+          "attempts": {"type": "integer"},
+          "sent_at": {"type": ["string", "null"], "format": "date-time"},
+          "created_at": {"type": "string", "format": "date-time"}
+        }
+      },
+      "description": "Alerts sent for this event"
+    },
+    "acknowledgements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "alert_id": {"type": "string"},
+          "contact_id": {"type": "string"},
+          "contact_name": {"type": "string"},
+          "action": {"enum": ["calling", "on_my_way", "false_alarm", "call_999_info"]},
+          "at": {"type": "string", "format": "date-time"}
+        }
+      },
+      "description": "Family acknowledgements"
+    },
+    "model_runs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "role": {"enum": ["pose", "vlm", "agent", "stt", "tts", "classifier"]},
+          "model_id": {"type": "string"},
+          "started_at": {"type": "string", "format": "date-time"},
+          "latency_ms": {"type": "integer"},
+          "tokens_in": {"type": "integer"},
+          "tokens_out": {"type": "integer"},
+          "ok": {"type": "boolean"},
+          "error": {"type": ["string", "null"]}
+        }
+      },
+      "description": "Model inference runs"
+    },
+    "transitions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "from": {"type": "string"},
+          "to": {"type": "string"},
+          "reason": {"type": "string"},
+          "at": {"type": "string", "format": "date-time"},
+          "details": {"type": ["object", "null"]}
+        }
+      },
+      "description": "State machine transitions"
+    }
+  }
+}

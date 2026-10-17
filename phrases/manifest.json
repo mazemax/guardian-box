@@ -1,0 +1,72 @@
+{
+  "$schema": "https://guardianbox.local/schemas/phrase-manifest.v1.json",
+  "version": "1.0.0",
+  "description": "Check-in voice phrase scripts for GuardianBox",
+  "placeholders": {
+    "{H}": "Honorific (Pakcik, Makcik, Uncle, Auntie, 阿伯, 阿姨, etc.)",
+    "{N}": "Resident name (optional)",
+    "{C}": "First contact's name"
+  },
+  "honorifics": {
+    "ms": {
+      "male_elder": ["Pakcik", "Abah", "Ayah", "Tok", "Atuk"],
+      "female_elder": ["Makcik", "Mak", "Ibu", "Nenek", "Opah"]
+    },
+    "en": {
+      "male_elder": ["Uncle", "Dad", "Pa", "Grandpa"],
+      "female_elder": ["Auntie", "Mum", "Ma", "Grandma"]
+    },
+    "zh": {
+      "male_elder": ["阿伯", "安哥", "爸", "爷爷"],
+      "female_elder": ["阿姨", "阿嬷", "婆婆", "妈", "奶奶"]
+    }
+  },
+  "phrases": [
+    {
+      "id": "soft",
+      "description": "Soft check (D3) - single gentle prompt",
+      "duration_ms": 2000
+    },
+    {
+      "id": "checkin_1",
+      "description": "Check-in attempt 1",
+      "duration_ms": 4000
+    },
+    {
+      "id": "checkin_2",
+      "description": "Check-in attempt 2 (louder, slower)",
+      "duration_ms": 4000
+    },
+    {
+      "id": "checkin_3",
+      "description": "Check-in attempt 3 (or second language)",
+      "duration_ms": 4000
+    },
+    {
+      "id": "ack_ok",
+      "description": "Acknowledgement when resident says OK (D5)",
+      "duration_ms": 3000
+    },
+    {
+      "id": "recheck",
+      "description": "Re-check prompt (D6) - asking if can get up",
+      "duration_ms": 4000
+    },
+    {
+      "id": "alert_sent",
+      "description": "Notification that family has been alerted (D7-D9)",
+      "duration_ms": 5000
+    },
+    {
+      "id": "alert_ack",
+      "description": "Notification that family is calling",
+      "duration_ms": 2000
+    },
+    {
+      "id": "offline",
+      "description": "Internet down notification (D10)",
+      "duration_ms": 5000
+    }
+  ],
+  "languages": ["ms", "en", "zh"]
+}

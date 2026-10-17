@@ -1,0 +1,59 @@
+{
+  "language": "ms",
+  "language_name": "Bahasa Melayu",
+  "phrases": {
+    "soft": {
+      "text": "{H} {N}, {H} okey?",
+      "notes": "Soft check - gentle, normal volume",
+      "duration_ms": 2000
+    },
+    "checkin_1": {
+      "text": "{H} {N}, {H} okey tak? Kalau perlukan bantuan, cakap 'tolong'.",
+      "notes": "First check-in attempt",
+      "duration_ms": 4000
+    },
+    "checkin_2": {
+      "text": "{H} {N}! {H} okey? Cakap 'okey', atau 'tolong'.",
+      "notes": "Louder and slower than checkin_1",
+      "duration_ms": 4000
+    },
+    "checkin_3": {
+      "text": "{H}, saya nak pastikan {H} selamat. Kalau boleh, jawab 'okey'.",
+      "notes": "Final attempt - more explicit",
+      "duration_ms": 4000
+    },
+    "ack_ok": {
+      "text": "Baik, {H}. Saya ada di sini kalau perlu apa-apa.",
+      "notes": "Spoken when resident confirms they're OK",
+      "duration_ms": 3000
+    },
+    "recheck": {
+      "text": "{H}, boleh bangun sendiri? Cakap 'boleh' atau 'tak boleh'.",
+      "notes": "D6 - asking if can get up after saying OK but still on floor",
+      "duration_ms": 4000
+    },
+    "alert_sent": {
+      "text": "Saya sudah beritahu {C}. Bantuan akan datang. Jangan paksa diri bangun kalau sakit.",
+      "notes": "Reassurance after sending alert",
+      "duration_ms": 5000
+    },
+    "alert_ack": {
+      "text": "{C} akan telefon {H} sekarang.",
+      "notes": "When family presses 'I'm calling now'",
+      "duration_ms": 2000
+    },
+    "offline": {
+      "text": "Saya sedang cuba hubungi keluarga. Saya akan bunyikan penggera supaya jiran dengar.",
+      "notes": "D10 - internet down, local alarm will sound",
+      "duration_ms": 5000
+    }
+  },
+  "keywords": {
+    "ok_no_help": ["okey", "ok", "saya okey", "tak apa", "takpe", "saya sihat", "boleh", "baik", "saya baik"],
+    "needs_help": ["tolong", "bantu", "tolong saya", "minta tolong", "pertolongan"],
+    "pain_or_injury": ["sakit", "sakit kaki", "sakit kepala", "sakit pinggang", "cedera", "luka", "pedih", "ngilu"],
+    "cannot_get_up": ["tak boleh bangun", "tak boleh", "tidak boleh bangun", "tak dapat bangun", "susah bangun"],
+    "call_family": ["panggil anak", "telefon anak", "panggil anak saya", "hubungi keluarga", "telefon keluarga"],
+    "negation": ["tak", "tidak", "bukan", "belum", "takde"]
+  }
+}

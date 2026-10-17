@@ -1,0 +1,319 @@
+# GuardianBox - Local Fall Detection and Voice Check-in System
+# Target: NVIDIA DGX Spark (GB10, ARM64, 128GB unified memory)
+# All inference runs locally. Only text alerts leave the box.
+
+services:
+  # ============================================================================
+  # AI Internal Network - No external route
+  # ============================================================================
+  
+  vllm:
+    image: vllm/vllm-openai:v0.20.0
+    container_name: guardianbox-vllm
+    profiles: ["gpu"]  # Only run with GPU profile
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    ipc: host
+    networks:
+      - ai-internal
+    environment:
+      - HF_HUB_OFFLINE=1
+    volumes:
+      - ${HF_CACHE:-~/.cache/huggingface}:/root/.cache/huggingface:ro
+      - /run/gb-frames:/frames:ro
+    command: >
+      nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-NVFP4
+      --served-model-name nemotron_3_nano_omni
+      --trust-remote-code
+      --host 0.0.0.0 --port 8000
+      --max-num-seqs 2
+      --max-model-len 16384
+      --gpu-memory-utilization 0.35
+      --kv-cache-dtype fp8
+      --limit-mm-per-prompt '{"video":1,"image":1,"audio":1}'
+      --allowed-local-media-path=/frames
+      --enable-prefix-caching
+      --reasoning-parser nemotron_v3
+      --enable-auto-tool-choice
+      --tool-call-parser qwen3_coder
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/v1/models"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 600s  # vLLM can take 10+ minutes to load
+    restart: unless-stopped
+
+  vision:
+    build:
+      context: ./services/vision
+      dockerfile: Dockerfile
+    image: guardianbox-vision:latest
+    container_name: guardianbox-vision
+    profiles: ["gpu"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    networks:
+      - ai-internal
+    volumes:
+      - /dev/video0:/dev/video0
+      - /run/gb-frames:/frames
+      - vision-data:/data
+    environment:
+      - CAMERA_SOURCE=${CAMERA_SOURCE:-/dev/video0}
+      - FRAME_WIDTH=${FRAME_WIDTH:-1280}
+      - FRAME_HEIGHT=${FRAME_HEIGHT:-720}
+      - TARGET_FPS=${TARGET_FPS:-15}
+      - MOCK_MODE=${MOCK_MODE:-false}
+    depends_on:
+      orchestrator:
+        condition: service_healthy
+    restart: unless-stopped
+
+  stt:
+    build:
+      context: ./services/stt
+      dockerfile: Dockerfile
+    image: guardianbox-stt:latest
+    container_name: guardianbox-stt
+    profiles: ["gpu"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    networks:
+      - ai-internal
+    volumes:
+      - ${HF_CACHE:-~/.cache/huggingface}:/root/.cache/huggingface:ro
+    environment:
+      - HF_HUB_OFFLINE=1
+      - MOCK_MODE=${MOCK_MODE:-false}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  voice:
+    build:
+      context: ./services/voice
+      dockerfile: Dockerfile
+    image: guardianbox-voice:latest
+    container_name: guardianbox-voice
+    profiles: ["gpu"]
+    networks:
+      - ai-internal
+    volumes:
+      - ./phrases:/phrases:ro
+      - voice-clips:/clips
+    devices:
+      - /dev/snd:/dev/snd
+    environment:
+      - MOCK_MODE=${MOCK_MODE:-false}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # ============================================================================
+  # Mock Services - For development/demo without GPU
+  # ============================================================================
+
+  vision-mock:
+    build:
+      context: ./services/vision
+      dockerfile: Dockerfile.mock
+    image: guardianbox-vision-mock:latest
+    container_name: guardianbox-vision-mock
+    profiles: ["mock"]
+    networks:
+      - ai-internal
+    volumes:
+      - /run/gb-frames:/frames
+    environment:
+      - MOCK_MODE=true
+      - ORCHESTRATOR_URL=http://orchestrator:8080
+    depends_on:
+      orchestrator:
+        condition: service_healthy
+    restart: unless-stopped
+
+  vlm-mock:
+    build:
+      context: ./services/orchestrator
+      dockerfile: Dockerfile.vlm-mock
+    image: guardianbox-vlm-mock:latest
+    container_name: guardianbox-vlm-mock
+    profiles: ["mock"]
+    networks:
+      - ai-internal
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      - MOCK_MODE=true
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/v1/models"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  stt-mock:
+    build:
+      context: ./services/stt
+      dockerfile: Dockerfile.mock
+    image: guardianbox-stt-mock:latest
+    container_name: guardianbox-stt-mock
+    profiles: ["mock"]
+    networks:
+      - ai-internal
+    environment:
+      - MOCK_MODE=true
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  voice-mock:
+    build:
+      context: ./services/voice
+      dockerfile: Dockerfile.mock
+    image: guardianbox-voice-mock:latest
+    container_name: guardianbox-voice-mock
+    profiles: ["mock"]
+    networks:
+      - ai-internal
+    volumes:
+      - ./phrases:/phrases:ro
+    environment:
+      - MOCK_MODE=true
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # ============================================================================
+  # Application Network
+  # ============================================================================
+
+  orchestrator:
+    build:
+      context: ./services/orchestrator
+      dockerfile: Dockerfile
+    image: guardianbox-orchestrator:latest
+    container_name: guardianbox-orchestrator
+    networks:
+      - ai-internal
+      - app
+    ports:
+      - "${DASHBOARD_PORT:-8080}:8080"
+    volumes:
+      - ./prompts:/app/prompts:ro
+      - ./schemas:/app/schemas:ro
+      - ./phrases:/app/phrases:ro
+      - orchestrator-data:/data
+      - /run/gb-frames:/frames
+    environment:
+      - MOCK_MODE=${MOCK_MODE:-false}
+      - VLLM_URL=${VLLM_URL:-http://vllm:8000}
+      - STT_URL=${STT_URL:-http://stt:8001}
+      - VOICE_URL=${VOICE_URL:-http://voice:8002}
+      - NOTIFIER_URL=${NOTIFIER_URL:-http://notifier:8003}
+      - DEMO_PROFILE=${DEMO_PROFILE:-home}
+      - TZ=${TZ:-Asia/Kuala_Lumpur}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  notifier:
+    build:
+      context: ./services/notifier
+      dockerfile: Dockerfile
+    image: guardianbox-notifier:latest
+    container_name: guardianbox-notifier
+    networks:
+      - app
+      - egress
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - MOCK_MODE=${MOCK_MODE:-false}
+      - EGRESS_PROXY_URL=http://egress-proxy:8004
+    depends_on:
+      egress-proxy:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  egress-proxy:
+    build:
+      context: ./services/egress-proxy
+      dockerfile: Dockerfile
+    image: guardianbox-egress-proxy:latest
+    container_name: guardianbox-egress-proxy
+    networks:
+      - egress
+    environment:
+      - ALLOWED_HOSTS=api.telegram.org
+      - SIMULATE_OFFLINE=${SIMULATE_OFFLINE:-false}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8004/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    image: guardianbox-dashboard:latest
+    container_name: guardianbox-dashboard
+    profiles: ["standalone-dashboard"]  # Only if running dashboard separately
+    networks:
+      - app
+    ports:
+      - "${DASHBOARD_PORT:-3000}:3000"
+    environment:
+      - ORCHESTRATOR_URL=http://orchestrator:8080
+    restart: unless-stopped
+
+networks:
+  ai-internal:
+    driver: bridge
+    internal: true  # No external route - models cannot reach the internet
+  app:
+    driver: bridge
+  egress:
+    driver: bridge
+
+volumes:
+  orchestrator-data:
+  vision-data:
+  voice-clips:

@@ -1,0 +1,13 @@
+# GuardianBox Mock Vision Service
+# Simulates pose detection for testing/demo without camera or GPU
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN pip install --no-cache-dir fastapi uvicorn httpx pydantic
+
+COPY mock_vision.py .
+
+EXPOSE 8005
+
+CMD ["uvicorn", "mock_vision:app", "--host", "0.0.0.0", "--port", "8005"]
