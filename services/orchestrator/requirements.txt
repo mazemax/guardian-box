@@ -17,3 +17,4 @@ pytest-httpx>=0.30.0
 
 # Linting
 ruff>=0.3.0
+jinja2>=3.1
