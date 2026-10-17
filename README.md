@@ -162,40 +162,79 @@ Only one line of text ever leaves the box. Video, frames and audio stay on the A
 
 1. Docker and Docker Compose installed
 2. NVIDIA Container Toolkit (for GPU mode)
-3. Telegram bot created via @BotFather
+3. Telegram bot created via @BotFather (optional)
 
-### Running in Mock Mode (No GPU Required)
+### Running on DGX Spark (Mock Mode)
 
 ```bash
-# Clone the repository
-git clone <repo-url>
-cd guardianbox
+# SSH into the Spark with port forwarding
+ssh -L 8080:localhost:8080 MadMax-006
 
-# Copy environment template
-cp .env.example .env
+# Clone and enter the repo
+cd ~/guardian-box
 
-# Start in mock mode (no GPU, camera, or mic required)
-make up-mock
+# Copy the sample clips to samples/ (gitignored)
+# clip1.mp4 - slow collapse (chest pain) → Alert
+# clip2.mp4 - fast fall (walker) → Alert
+# clip3.mp4 - prayer (sujud) → Quiet
+# clip4.mp4 - slow collapse (dizzy) → Alert
+# clip5.mp4 - normal walking → Quiet
 
-# Open dashboard
+# Start in mock mode
+docker compose --profile mock up -d --build
+
+# Open dashboard in your browser
 open http://localhost:8080
 ```
 
 ### Running on DGX Spark (Full GPU Mode)
 
 ```bash
-# 1. Download model weights (do this before the hackathon!)
-make pull-models
+# SSH into the Spark with port forwarding
+ssh -L 8080:localhost:8080 MadMax-006
 
-# 2. Configure Telegram
-echo "TELEGRAM_BOT_TOKEN=your_token_here" >> .env
+cd ~/guardian-box
 
-# 3. Start all services
-make up
+# Start with GPU support
+docker compose --profile gpu up -d --build
 
-# 4. Open dashboard and complete setup
-open http://localhost:8080/setup
+# Open dashboard
+open http://localhost:8080
 ```
+
+### Testing the Dashboard
+
+1. **Open the dashboard** at `http://localhost:8080`
+2. **Live footage panel**: Should show video from the default clip (`clip2.mp4`)
+3. **Clip picker**: Select different clips from the dropdown to test scenarios
+4. **Demo controls**: Click buttons to run test scenarios:
+   - 🚨 **Fall** - Fast fall with no response → Alert
+   - 💔 **Slow Collapse** - Chest pain scenario → Alert
+   - 🕌 **Prayer** - Sujud pose → Stay quiet
+   - ✅ **OK Reply** - Fall with "I'm OK" response → Stand down
+   - 🔇 **Silence** - Fall with no response → Alert
+
+5. **Pipeline timeline**: Watch stages animate during demos
+6. **Telegram panel**: See mock messages or real alerts if configured
+
+### Telegram Integration
+
+```bash
+# 1. Create a bot via @BotFather and get the token
+# 2. Add to .env on the Spark:
+echo "TELEGRAM_BOT_TOKEN=123456789:ABC..." >> .env
+echo "TELEGRAM_CHAT_IDS=your_chat_id" >> .env
+
+# 3. Restart services
+docker compose --profile mock down
+docker compose --profile mock up -d
+
+# 4. Test from dashboard: click "📱 Test Message" button
+# 5. Or via API:
+curl -X POST http://localhost:8080/api/v1/telegram/test
+```
+
+See [docs/telegram-setup.md](docs/telegram-setup.md) for detailed instructions.
 
 ---
 

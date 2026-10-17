@@ -1,0 +1,17 @@
+# GuardianBox Vision Service Dependencies
+# Designed for ARM64 (DGX Spark) and x86_64
+
+fastapi>=0.100.0
+uvicorn>=0.23.0
+httpx>=0.24.0
+pydantic>=2.0.0
+
+# OpenCV headless - no GUI dependencies, smaller image
+opencv-python-headless>=4.8.0
+
+# NumPy for pose analysis
+numpy>=1.24.0
+
+# YOLO pose detection (optional - falls back to simple detection if unavailable)
+# Uses CPU by default, GPU if available
+ultralytics>=8.0.0

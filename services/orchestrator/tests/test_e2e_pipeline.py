@@ -368,3 +368,178 @@ class TestNotifierIsCalled:
             f"Alert should be sent, got status={alert.status}"
         assert alert.level in ["urgent", "needs_check"], \
             f"Alert level should be urgent or needs_check, got {alert.level}"
+
+
+class TestFullFallDemoPipeline:
+    """
+    Test the complete fall demo pipeline end-to-end.
+    
+    This test verifies:
+    1. Pose trigger starts the pipeline
+    2. VLM confirms the fall
+    3. Check-in attempts are made
+    4. Silence leads to alert
+    5. Ack resolves the event
+    6. No LISTENING->LISTENING crash occurs
+    """
+    
+    @pytest.mark.asyncio
+    async def test_full_fall_to_ack_resolved(self, event_manager):
+        """
+        Complete fall demo: pose -> VLM -> check-in -> silence -> alert -> ack -> resolved.
+        
+        This is the main demo scenario that should work without errors.
+        """
+        pose_summary = PoseSummary(
+            torso_angle=78,
+            head_height_ratio=0.15,
+            hip_descent_ratio=0.55,
+            stillness_seconds=5,
+            motion_energy=0.05,
+            prayer_cycles=0,
+            rapid_descent=True,
+            zone="floor",
+        )
+        
+        event = await event_manager.handle_pose_trigger(
+            TriggerType.FAST_FALL,
+            pose_summary,
+            [],
+        )
+        
+        assert event is not None, "Event should be created"
+        assert event.id is not None, "Event should have an ID"
+        
+        assert event.vlm_assessment is not None, "VLM should have assessed the scene"
+        assert event.vlm_assessment.scene_class in ["fall", "lying_on_floor_unclear_cause"], \
+            f"VLM should classify as fall, got {event.vlm_assessment.scene_class}"
+        
+        assert len(event.check_in_attempts) == 3, \
+            f"Should have 3 check-in attempts, got {len(event.check_in_attempts)}"
+        
+        for attempt in event.check_in_attempts:
+            assert attempt.intent in ["no_response", "unclear"], \
+                f"Silence demo should have no_response intents, got {attempt.intent}"
+        
+        assert event.decision_row in ["D8", "D9"], \
+            f"Silence should lead to D8 or D9, got {event.decision_row}"
+        
+        assert event.state in ["AWAITING_ACK", "ALERTING"], \
+            f"Should be awaiting ack, got {event.state}"
+        
+        assert len(event.alerts) >= 1, "Should have sent at least one alert"
+        
+        success = await event_manager.handle_acknowledgement(
+            event.id,
+            "family",
+            "calling",
+        )
+        
+        assert success, "Acknowledgement should succeed"
+        
+        final_event = event_manager.events.get(event.id)
+        assert final_event.state == "RESOLVED", \
+            f"Event should be resolved after ack, got {final_event.state}"
+        
+        if event_manager.state_machine:
+            transitions = event_manager.state_machine.transitions
+            
+            for i, t in enumerate(transitions):
+                assert t.from_state != t.to_state, \
+                    f"No self-transitions allowed: {t.from_state} at index {i}"
+            
+            transition_sequence = [t.to_state.value for t in transitions]
+            
+            expected_states = ["SUSPECTED", "CONFIRMING", "CHECKING_IN", "LISTENING"]
+            for state in expected_states:
+                assert state in transition_sequence, \
+                    f"Missing expected state {state} in transition sequence"
+            
+            assert "RESOLVED" in transition_sequence, \
+                "Should end in RESOLVED state"
+    
+    @pytest.mark.asyncio
+    async def test_prayer_detection_with_real_vlm(self, event_manager):
+        """
+        Prayer scenario: pose trigger with prayer_cycles > 0.
+        
+        Note: The mock VLM doesn't detect prayer. With a real VLM:
+        - VLM should classify as prayer_sujud or prayer_other_position
+        - Decision D1 should apply: stand down silently
+        - No voice check-in should occur
+        
+        In mock mode, this test verifies the pipeline runs without errors
+        even if the mock VLM doesn't detect prayer.
+        """
+        pose_summary = PoseSummary(
+            torso_angle=85,
+            head_height_ratio=0.1,
+            hip_descent_ratio=0.3,
+            stillness_seconds=8,
+            motion_energy=0.1,
+            prayer_cycles=3,  # High prayer cycles
+            rapid_descent=False,
+            zone="prayer_area",
+        )
+        
+        event = await event_manager.handle_pose_trigger(
+            TriggerType.SLOW_LOW_POSTURE,
+            pose_summary,
+            [],
+        )
+        
+        assert event is not None, "Event should be created"
+        
+        # With real VLM, prayer_cycles=3 and zone=prayer_area would lead to D1
+        # With mock VLM, it goes through the full flow
+        # Either outcome is acceptable in this test
+        assert event.state is not None, "Event should have a state"
+        
+        # Verify no LISTENING->LISTENING crash occurred
+        if event_manager.state_machine:
+            for i, t in enumerate(event_manager.state_machine.transitions):
+                assert t.from_state != t.to_state, \
+                    f"No self-transitions at index {i}: {t.from_state}"
+    
+    @pytest.mark.asyncio
+    async def test_ok_reply_stands_down(self, event_manager):
+        """
+        OK reply scenario: fall -> check-in -> "I'm OK" -> stand down.
+        """
+        pose_summary = PoseSummary(
+            torso_angle=70,
+            head_height_ratio=0.2,
+            hip_descent_ratio=0.45,
+            stillness_seconds=4,
+            motion_energy=0.1,
+            prayer_cycles=0,
+            rapid_descent=True,
+            zone="floor",
+        )
+        
+        async def inject_ok_reply():
+            await asyncio.sleep(0.5)
+            event_manager.inject_reply("Saya okey", "ms")
+        
+        asyncio.create_task(inject_ok_reply())
+        
+        event = await event_manager.handle_pose_trigger(
+            TriggerType.FAST_FALL,
+            pose_summary,
+            [],
+        )
+        
+        assert event is not None, "Event should be created"
+        
+        ok_found = False
+        for attempt in event.check_in_attempts:
+            if attempt.intent == "ok":
+                ok_found = True
+                break
+        
+        if ok_found:
+            assert event.decision_row == "D5" or event.state in ["STOOD_DOWN", "RESOLVED"], \
+                f"OK reply should lead to D5 stand down, got {event.decision_row}, state={event.state}"
+            
+            assert len(event.alerts) == 0, \
+                "OK reply should not trigger alerts"

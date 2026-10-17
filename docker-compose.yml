@@ -65,17 +65,22 @@ services:
               count: all
               capabilities: [gpu]
     networks:
-      - ai-internal
+      ai-internal:
+        aliases:
+          - vision
     volumes:
       - /dev/video0:/dev/video0
       - /run/gb-frames:/frames
       - vision-data:/data
+      - ./samples:/samples:ro
     environment:
-      - CAMERA_SOURCE=${CAMERA_SOURCE:-/dev/video0}
-      - FRAME_WIDTH=${FRAME_WIDTH:-1280}
-      - FRAME_HEIGHT=${FRAME_HEIGHT:-720}
+      - CAMERA_SOURCE=${CAMERA_SOURCE:-/samples/clip2.mp4}
+      - SAMPLES_DIR=/samples
+      - FRAME_WIDTH=${FRAME_WIDTH:-640}
+      - FRAME_HEIGHT=${FRAME_HEIGHT:-480}
       - TARGET_FPS=${TARGET_FPS:-15}
       - MOCK_MODE=${MOCK_MODE:-false}
+      - ORCHESTRATOR_URL=http://orchestrator:8080
     depends_on:
       orchestrator:
         condition: service_healthy
@@ -147,15 +152,28 @@ services:
     container_name: guardianbox-vision-mock
     profiles: ["mock"]
     networks:
-      - ai-internal
+      ai-internal:
+        aliases:
+          - vision
     volumes:
       - /run/gb-frames:/frames
+      - ./samples:/samples:ro
     environment:
       - MOCK_MODE=true
+      - CAMERA_SOURCE=${CAMERA_SOURCE:-/samples/clip2.mp4}
+      - SAMPLES_DIR=/samples
+      - FRAME_WIDTH=${FRAME_WIDTH:-640}
+      - FRAME_HEIGHT=${FRAME_HEIGHT:-480}
+      - TARGET_FPS=${TARGET_FPS:-15}
       - ORCHESTRATOR_URL=http://orchestrator:8080
     depends_on:
       orchestrator:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8004/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     restart: unless-stopped
 
   vlm-mock:
@@ -233,6 +251,7 @@ services:
     networks:
       - ai-internal
       - app
+      - egress
     ports:
       - "${DASHBOARD_PORT:-8080}:8080"
     volumes:
@@ -240,6 +259,7 @@ services:
       - ./schemas:/app/schemas:ro
       - ./phrases:/app/phrases:ro
       - ./dashboard:/app/dashboard:ro
+      - ./samples:/app/samples:ro
       - orchestrator-data:/data
       - /run/gb-frames:/frames
     environment:
@@ -248,8 +268,12 @@ services:
       - STT_URL=${STT_URL:-http://stt:8001}
       - VOICE_URL=${VOICE_URL:-http://voice:8002}
       - NOTIFIER_URL=${NOTIFIER_URL:-http://notifier:8003}
+      - VISION_URL=${VISION_URL:-http://vision:8004}
+      - SAMPLES_DIR=/app/samples
       - DEMO_PROFILE=${DEMO_PROFILE:-home}
       - TZ=${TZ:-Asia/Kuala_Lumpur}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_IDS=${TELEGRAM_CHAT_IDS:-}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/api/v1/health"]
       interval: 10s
@@ -267,8 +291,11 @@ services:
     networks:
       - app
       - egress
+    volumes:
+      - notifier-data:/data
     environment:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_IDS=${TELEGRAM_CHAT_IDS:-}
       - MOCK_MODE=${MOCK_MODE:-false}
       - EGRESS_PROXY_URL=http://egress-proxy:8004
     depends_on:
@@ -329,3 +356,4 @@ volumes:
   orchestrator-data:
   vision-data:
   voice-clips:
+  notifier-data:
