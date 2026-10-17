@@ -1,0 +1,16 @@
+# GuardianBox Vision Service - Mock/CPU-only Dependencies
+# Lightweight dependencies for demo/development (no torch/CUDA)
+
+fastapi>=0.100.0
+uvicorn>=0.23.0
+httpx>=0.24.0
+pydantic>=2.0.0
+
+# OpenCV headless - no GUI dependencies, smaller image
+opencv-python-headless>=4.8.0
+
+# NumPy for pose analysis
+numpy>=1.24.0
+
+# Note: No ultralytics/torch - mock mode uses simplified pose detection
+# or falls back to mock pose data for demos

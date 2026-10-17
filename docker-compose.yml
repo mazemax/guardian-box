@@ -146,9 +146,9 @@ services:
   vision-mock:
     build:
       context: ./services/vision
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.mock
       network: host  # build with host networking; some Spark setups give the default build bridge no route out
-    image: guardianbox-vision:latest
+    image: guardianbox-vision-mock:latest
     container_name: guardianbox-vision-mock
     profiles: ["mock"]
     networks:

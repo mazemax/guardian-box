@@ -1,5 +1,6 @@
-# GuardianBox Vision Service
-# CPU-capable with optional GPU, works on ARM64 (DGX Spark) and x86_64
+# GuardianBox Vision Service - Full build with YOLO pose detection
+# For GPU profile: includes ultralytics/torch with CUDA support
+# For mock/CPU-only, use Dockerfile.mock instead (much smaller image)
 FROM python:3.11-slim
 
 WORKDIR /app
