@@ -91,6 +91,8 @@ class EventManager:
         self.events: Dict[str, Event] = {}
         self.model_runs: list[ModelRun] = []
         self._event_listeners: list[Callable[[str, dict], Awaitable[None]]] = []
+        self._pending_reply: Optional[Dict[str, Any]] = None
+        self._reply_event: asyncio.Event = asyncio.Event()
         
         self.resident = Resident(
             display_name="Ahmad",
@@ -444,7 +446,7 @@ Return JSON matching this schema:
                 "state": "listening",
             })
             
-            stt_result = await self._listen(event)
+            stt_result = await self._listen_for_reply(event)
             
             attempt.listen_ms = stt_result.get("listen_ms", 0)
             attempt.vad_speech_ms = stt_result.get("vad_speech_ms", 0)
@@ -490,16 +492,44 @@ Return JSON matching this schema:
                 DecisionOutcome.ALERT_NO_RESPONSE,
                 DecisionOutcome.ALERT_NEEDS_CHECK,
             }:
+                self.state_machine.transition(
+                    EventState.DECIDING,
+                    TransitionReason.REPLY_CLASSIFIED,
+                    {"intent": intent.value, "final": True}
+                )
                 await self._send_alert(event, next_decision)
                 return
             
             if next_decision.outcome == DecisionOutcome.STAND_DOWN:
+                self.state_machine.transition(
+                    EventState.DECIDING,
+                    TransitionReason.REPLY_CLASSIFIED,
+                    {"intent": intent.value}
+                )
                 await self._apply_decision(event, next_decision)
                 return
             
             if intent not in {ReplyIntent.UNCLEAR, ReplyIntent.NO_RESPONSE}:
+                self.state_machine.transition(
+                    EventState.DECIDING,
+                    TransitionReason.REPLY_CLASSIFIED,
+                    {"intent": intent.value}
+                )
                 break
+            
+            if attempt_num < max_attempts:
+                self.state_machine.transition(
+                    EventState.CHECKING_IN,
+                    TransitionReason.UNCLEAR_RESPONSE if intent == ReplyIntent.UNCLEAR else TransitionReason.NO_RESPONSE,
+                    {"attempt": attempt_num, "reason": "retry"}
+                )
+                event.state = EventState.CHECKING_IN.value
         
+        self.state_machine.transition(
+            EventState.DECIDING,
+            TransitionReason.REPLY_CLASSIFIED,
+            {"attempts_exhausted": True}
+        )
         final_decision = apply_decision_table(
             scene_class=None,
             confidence=0,
@@ -540,8 +570,33 @@ Return JSON matching this schema:
         self.model_runs.append(model_run)
         await self._emit_event("model_run", model_run.model_dump())
     
-    async def _listen(self, event: Event) -> dict:
-        """Listen for a reply through the STT service."""
+    def inject_reply(self, transcript: str, lang: str = "ms") -> bool:
+        """
+        Inject a simulated reply into the active event's listening step.
+        Used for demo/testing via the simulate-reply endpoint.
+        Returns True if the reply was accepted, False if no event is listening.
+        """
+        if not self.active_event or self.state_machine is None:
+            return False
+        if self.state_machine.state != EventState.LISTENING:
+            return False
+        
+        self._pending_reply = {
+            "transcript": transcript,
+            "detected_lang": lang,
+            "no_speech_prob": 0.1 if transcript else 0.9,
+            "vad_speech_ms": len(transcript) * 50 if transcript else 0,
+            "listen_ms": self.timing["listen_window_s"] * 1000,
+            "simulated": True,
+        }
+        self._reply_event.set()
+        return True
+    
+    async def _listen_for_reply(self, event: Event) -> dict:
+        """
+        Listen for a reply through the STT service or wait for a simulated reply.
+        Supports demo replay via inject_reply().
+        """
         model_run = ModelRun(
             event_id=event.id,
             role="stt",
@@ -549,16 +604,35 @@ Return JSON matching this schema:
         )
         start = datetime.now(timezone.utc)
         
+        self._reply_event.clear()
+        self._pending_reply = None
+        
         try:
             if self.mock_mode:
-                await asyncio.sleep(self.timing["listen_window_s"])
-                result = {
-                    "transcript": "",
-                    "detected_lang": None,
-                    "no_speech_prob": 0.9,
-                    "vad_speech_ms": 0,
-                    "listen_ms": self.timing["listen_window_s"] * 1000,
-                }
+                try:
+                    await asyncio.wait_for(
+                        self._reply_event.wait(),
+                        timeout=self.timing["listen_window_s"]
+                    )
+                    if self._pending_reply:
+                        result = self._pending_reply
+                        self._pending_reply = None
+                    else:
+                        result = {
+                            "transcript": "",
+                            "detected_lang": None,
+                            "no_speech_prob": 0.9,
+                            "vad_speech_ms": 0,
+                            "listen_ms": self.timing["listen_window_s"] * 1000,
+                        }
+                except asyncio.TimeoutError:
+                    result = {
+                        "transcript": "",
+                        "detected_lang": None,
+                        "no_speech_prob": 0.9,
+                        "vad_speech_ms": 0,
+                        "listen_ms": self.timing["listen_window_s"] * 1000,
+                    }
             else:
                 client = await self.get_http_client()
                 response = await client.post(f"{self.stt_url}/listen", json={
@@ -819,3 +893,12 @@ Please give them a call.
         if self.state_machine:
             return self.state_machine.state.value
         return EventState.MONITORING.value
+    
+    def reset(self):
+        """Reset the event manager state (for testing)."""
+        self.active_event = None
+        self.state_machine = None
+        self.events.clear()
+        self.model_runs.clear()
+        self._pending_reply = None
+        self._reply_event = asyncio.Event()
