@@ -1,0 +1,19 @@
+# DGX Spark override: Docker bridge networks often have no outbound internet.
+# Only host networking reaches the internet. Apply with:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.spark.yml --profile mock up -d
+#
+# The orchestrator and notifier stay on the app network; only egress-proxy uses host mode.
+# Notifier reaches the proxy at host.docker.internal:8004 (host-published egress port).
+
+services:
+  egress-proxy:
+    networks: !reset []
+    network_mode: host
+
+  notifier:
+    environment:
+      - EGRESS_PROXY_URL=http://host.docker.internal:8004
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on: !reset []

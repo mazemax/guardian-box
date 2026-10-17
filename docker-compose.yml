@@ -274,6 +274,7 @@ services:
       - TZ=${TZ:-Asia/Kuala_Lumpur}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - TELEGRAM_CHAT_IDS=${TELEGRAM_CHAT_IDS:-}
+      - TELEGRAM_LIVE_IN_MOCK=${TELEGRAM_LIVE_IN_MOCK:-true}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/api/v1/health"]
       interval: 10s
@@ -297,6 +298,7 @@ services:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - TELEGRAM_CHAT_IDS=${TELEGRAM_CHAT_IDS:-}
       - MOCK_MODE=${MOCK_MODE:-false}
+      - TELEGRAM_LIVE_IN_MOCK=${TELEGRAM_LIVE_IN_MOCK:-true}
       - EGRESS_PROXY_URL=http://egress-proxy:8004
     depends_on:
       egress-proxy:

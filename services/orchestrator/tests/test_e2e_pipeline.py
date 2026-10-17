@@ -238,24 +238,24 @@ class TestChineseReplyPaths:
         )
         
         async def inject_chinese_ok():
-            await asyncio.sleep(1.5)
-            for _ in range(20):
+            # Wait past mock phrase playback; avoid injecting before listen clears pending reply
+            await asyncio.sleep(1.0)
+            for _ in range(80):
                 if event_manager.state_machine and \
                    event_manager.state_machine.state == EventState.LISTENING:
-                    event_manager.inject_reply("我没事", "zh")
-                    return True
-                await asyncio.sleep(0.2)
+                    if event_manager.inject_reply("我没事", "zh"):
+                        return True
+                await asyncio.sleep(0.1)
             return False
         
-        inject_task = asyncio.create_task(inject_chinese_ok())
-        
-        event = await event_manager.handle_pose_trigger(
-            TriggerType.FAST_FALL,
-            pose_summary,
-            [],
+        event, _ = await asyncio.gather(
+            event_manager.handle_pose_trigger(
+                TriggerType.FAST_FALL,
+                pose_summary,
+                [],
+            ),
+            inject_chinese_ok(),
         )
-        
-        await inject_task
         
         assert event.decision_row == "D5" or event.state in ["STOOD_DOWN", "RESOLVED"], \
             f"Expected stand down after Chinese OK, got state={event.state}, rule={event.decision_row}"

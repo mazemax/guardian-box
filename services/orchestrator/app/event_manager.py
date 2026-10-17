@@ -11,8 +11,14 @@ Manages the full lifecycle of detection events, coordinating:
 import asyncio
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import Optional, Dict, Any, Callable, Awaitable
+from typing import Optional, Dict, Any, Callable, Awaitable, List
 import httpx
+
+from .telegram import (
+    should_send_live_telegram,
+    get_telegram_chat_ids_from_env,
+    build_resolved_telegram_text,
+)
 
 from .state_machine import (
     EventState, EventStateMachine, TriggerType, TransitionReason
@@ -78,6 +84,7 @@ class EventManager:
         notifier_url: str = "http://notifier:8003",
         profile: str = "home",
         mock_mode: bool = False,
+        telegram_live_in_mock: bool = True,
     ):
         self.vllm_url = vllm_url
         self.stt_url = stt_url
@@ -85,6 +92,7 @@ class EventManager:
         self.notifier_url = notifier_url
         self.timing = TimingProfile.get(profile)
         self.mock_mode = mock_mode
+        self.telegram_live_in_mock = telegram_live_in_mock
         
         self.active_event: Optional[Event] = None
         self.state_machine: Optional[EventStateMachine] = None
@@ -104,6 +112,60 @@ class EventManager:
         self.contacts: list[Contact] = []
         
         self._http_client: Optional[httpx.AsyncClient] = None
+
+        self.sync_contacts_from_env()
+    
+    def sync_contacts_from_env(self):
+        """Load family contacts from TELEGRAM_CHAT_IDS when configured."""
+        chat_ids = get_telegram_chat_ids_from_env()
+        if not chat_ids:
+            return
+        self.contacts = [
+            Contact(
+                name=f"Family {idx + 1}",
+                telegram_chat_id=chat_id,
+                language="en",
+                priority=idx + 1,
+            )
+            for idx, chat_id in enumerate(chat_ids)
+        ]
+
+    def telegram_live_enabled(self) -> bool:
+        """Whether to send/poll real Telegram via the notifier."""
+        if not self.telegram_live_in_mock and self.mock_mode:
+            return False
+        return should_send_live_telegram(self.mock_mode)
+
+    async def _emit_telegram_preview(self, alert: Alert):
+        """Dashboard phone-style preview of the Telegram alert."""
+        await self._emit_event("telegram_preview", {
+            "type": "alert",
+            "event_id": alert.event_id,
+            "alert_id": alert.id,
+            "level": alert.level,
+            "contact": alert.contact_name,
+            "text": alert.text,
+            "snapshot_url": "/api/v1/vision/snapshot.jpg",
+            "buttons": [
+                {"id": "calling", "text": "📞 I'm calling them now"},
+                {"id": "on_my_way", "text": "🚗 On my way"},
+                {"id": "false_alarm", "text": "✅ False alarm"},
+                {"id": "need_more_info", "text": "❓ Need more info"},
+            ],
+        })
+
+    async def _update_telegram_message(self, event: Event, text: str) -> None:
+        """Edit the Telegram alert after stand-down or resolve."""
+        if not self.telegram_live_enabled():
+            return
+        try:
+            client = await self.get_http_client()
+            await client.post(
+                f"{self.notifier_url}/update/{event.id}",
+                params={"text": text},
+            )
+        except Exception as e:
+            logger.error(f"Telegram resolve update error: {e}")
     
     async def get_http_client(self) -> httpx.AsyncClient:
         if self._http_client is None:
@@ -621,7 +683,8 @@ Return JSON matching this schema:
             "transcript": transcript,
             "detected_lang": lang,
             "no_speech_prob": 0.1 if transcript else 0.9,
-            "vad_speech_ms": len(transcript) * 50 if transcript else 0,
+            # Enough VAD duration for classify_reply keyword matching (>= 0.3s)
+            "vad_speech_ms": max(400, len(transcript) * 80) if transcript else 0,
             "listen_ms": self.timing["listen_window_s"] * 1000,
             "simulated": True,
         }
@@ -713,11 +776,12 @@ Return JSON matching this schema:
         if decision.spoken_phrase_id:
             await self._play_phrase(event, decision.spoken_phrase_id)
         
-        for contact in self.contacts[:1] or [Contact(
-            name="Family",
-            telegram_chat_id="mock",
-            language="en",
-        )]:
+        default_contacts: List[Contact] = []
+        if not self.contacts and not self.telegram_live_enabled():
+            default_contacts = [
+                Contact(name="Family", telegram_chat_id="mock", language="en"),
+            ]
+        for contact in self.contacts[:1] or default_contacts:
             alert = Alert(
                 event_id=event.id,
                 contact_id=contact.id,
@@ -727,7 +791,7 @@ Return JSON matching this schema:
             )
             event.alerts.append(alert)
             
-            success = await self._send_telegram_alert(alert)
+            success = await self._send_telegram_alert(alert, contact)
             
             if success:
                 self.state_machine.transition(
@@ -819,51 +883,44 @@ Please give them a call.
         
         return text[:1024]
     
-    async def _send_telegram_alert(self, alert: Alert) -> bool:
+    async def _send_telegram_alert(self, alert: Alert, contact: Contact) -> bool:
         """Send alert via notifier service."""
         try:
             if self.mock_mode:
                 await asyncio.sleep(0.2)
-                alert.status = "sent"
-                alert.sent_at = utc_now()
-                
-                # Emit telegram_preview SSE for dashboard mock preview
-                await self._emit_event("telegram_preview", {
-                    "type": "alert",
-                    "event_id": alert.event_id,
-                    "alert_id": alert.id,
-                    "level": alert.level,
-                    "contact": alert.contact_name,
-                    "text": alert.text,
-                    "snapshot_url": "/api/v1/vision/snapshot.jpg",
-                    "buttons": [
-                        {"id": "calling", "text": "📞 I'm calling them now"},
-                        {"id": "on_my_way", "text": "🚗 On my way"},
-                        {"id": "false_alarm", "text": "✅ False alarm"},
-                        {"id": "need_more_info", "text": "❓ Need more info"}
-                    ]
-                })
-                
-                return True
-            
+                await self._emit_telegram_preview(alert)
+
+            if not self.telegram_live_enabled():
+                if self.mock_mode:
+                    alert.status = "sent"
+                    alert.sent_at = utc_now()
+                    return True
+                alert.status = "failed"
+                return False
+
             client = await self.get_http_client()
             response = await client.post(f"{self.notifier_url}/send", json={
-                "chat_id": alert.contact_id,
+                "chat_id": contact.telegram_chat_id,
                 "text": alert.text,
                 "event_id": alert.event_id,
                 "alert_id": alert.id,
+                "level": alert.level,
+                "language": contact.language,
             })
-            
+
             if response.status_code == 200:
                 data = response.json()
-                alert.telegram_message_id = data.get("message_id")
-                alert.status = "sent"
-                alert.sent_at = utc_now()
-                return True
-            else:
+                if data.get("status") == "sent":
+                    alert.telegram_message_id = data.get("message_id")
+                    alert.status = "sent"
+                    alert.sent_at = utc_now()
+                    return True
                 alert.status = "failed"
                 return False
-                
+
+            alert.status = "failed"
+            return False
+
         except Exception as e:
             logger.error(f"Telegram error: {e}")
             alert.status = "failed"
@@ -901,8 +958,8 @@ Please give them a call.
             "action": action,
             "contact": ack.contact_name,
         })
-        
-        await self._resolve_event(event)
+
+        await self._resolve_event(event, telegram_action=action)
         return True
     
     async def _start_watchdog(self, event: Event, minutes: int):
@@ -919,7 +976,7 @@ Please give them a call.
             )
             await self._apply_decision(event, decision)
     
-    async def _resolve_event(self, event: Event):
+    async def _resolve_event(self, event: Event, telegram_action: Optional[str] = None):
         """Resolve an event and return to monitoring."""
         if self.state_machine and self.state_machine.state != EventState.RESOLVED:
             try:
@@ -933,6 +990,11 @@ Please give them a call.
         event.state = EventState.RESOLVED.value
         event.resolved_at = utc_now()
         event.transitions = self.state_machine.transitions if self.state_machine else []
+
+        await self._update_telegram_message(
+            event,
+            build_resolved_telegram_text(telegram_action),
+        )
         
         self.active_event = None
         self.state_machine = None

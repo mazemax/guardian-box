@@ -26,6 +26,11 @@ import orjson
 
 from .event_manager import EventManager, TimingProfile
 from .state_machine import EventState, TriggerType
+from .telegram import (
+    build_test_message,
+    get_telegram_chat_ids_from_env,
+    should_send_live_telegram,
+)
 from .models import (
     Event, PoseSummary, Resident, Contact, Zone,
     SystemStatus, EgressEvent
@@ -46,12 +51,14 @@ VISION_URL = os.getenv("VISION_URL", "http://vision:8004")
 SAMPLES_DIR = os.getenv("SAMPLES_DIR", "/app/samples")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_IDS = os.getenv("TELEGRAM_CHAT_IDS", "")
+TELEGRAM_LIVE_IN_MOCK = os.getenv("TELEGRAM_LIVE_IN_MOCK", "true").lower() == "true"
 
 
 event_manager: Optional[EventManager] = None
 sse_queues: list[asyncio.Queue] = []
 egress_log: list[EgressEvent] = []
 http_client: Optional[httpx.AsyncClient] = None
+telegram_poll_task: Optional[asyncio.Task] = None
 
 
 def get_real_memory_info() -> tuple[float, float]:
@@ -123,10 +130,50 @@ def list_sample_clips() -> list[dict]:
     return clips
 
 
+async def _telegram_callback_poll_loop():
+    """Poll notifier for Telegram inline button presses (long-polling getUpdates)."""
+    while True:
+        try:
+            if (
+                event_manager
+                and event_manager.telegram_live_enabled()
+                and http_client
+            ):
+                response = await http_client.get(
+                    f"{NOTIFIER_URL}/poll",
+                    timeout=httpx.Timeout(60.0, connect=10.0),
+                )
+                if response.status_code == 200:
+                    for callback in response.json().get("updates", []):
+                        event_id = callback.get("event_id")
+                        action = callback.get("action")
+                        chat_id = callback.get("chat_id", "default")
+                        query_id = callback.get("callback_query_id")
+                        if not event_id or not action:
+                            continue
+                        await event_manager.handle_acknowledgement(
+                            event_id,
+                            chat_id,
+                            action,
+                        )
+                        if query_id:
+                            await http_client.post(
+                                f"{NOTIFIER_URL}/answer-callback",
+                                json={"callback_query_id": query_id},
+                            )
+            else:
+                await asyncio.sleep(5)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.error(f"Telegram poll error: {e}")
+            await asyncio.sleep(5)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
-    global event_manager, http_client
+    global event_manager, http_client, telegram_poll_task
     
     http_client = httpx.AsyncClient(timeout=30.0)
     
@@ -137,6 +184,7 @@ async def lifespan(app: FastAPI):
         notifier_url=NOTIFIER_URL,
         profile=DEMO_PROFILE,
         mock_mode=MOCK_MODE,
+        telegram_live_in_mock=TELEGRAM_LIVE_IN_MOCK,
     )
     
     async def sse_broadcaster(event_type: str, data: dict):
@@ -148,10 +196,20 @@ async def lifespan(app: FastAPI):
                 pass
     
     event_manager.add_event_listener(sse_broadcaster)
+
+    if should_send_live_telegram(MOCK_MODE):
+        telegram_poll_task = asyncio.create_task(_telegram_callback_poll_loop())
     
     logger.info(f"Orchestrator started (mock_mode={MOCK_MODE}, profile={DEMO_PROFILE})")
     
     yield
+
+    if telegram_poll_task:
+        telegram_poll_task.cancel()
+        try:
+            await telegram_poll_task
+        except asyncio.CancelledError:
+            pass
     
     await event_manager.close()
     if http_client:
@@ -693,8 +751,7 @@ def get_telegram_token() -> str:
 
 def get_telegram_chat_ids() -> list[str]:
     """Get Telegram chat IDs from environment (re-reads at runtime)."""
-    chat_ids_str = os.getenv("TELEGRAM_CHAT_IDS", "")
-    return [cid.strip() for cid in chat_ids_str.split(",") if cid.strip()]
+    return get_telegram_chat_ids_from_env()
 
 
 @app.get("/api/v1/telegram/status")
@@ -716,54 +773,59 @@ async def send_telegram_test():
     """Send a test message to configured Telegram chat(s)."""
     token = get_telegram_token()
     chat_ids = get_telegram_chat_ids()
-    
+    preview_text = build_test_message()
+
+    await broadcast_sse("telegram_preview", {
+        "type": "test",
+        "level": "info",
+        "text": preview_text,
+        "time": datetime.now(timezone.utc).isoformat(),
+    })
+
     if not token:
-        # In mock mode, broadcast a telegram_preview SSE event
-        await broadcast_sse("telegram_preview", {
-            "type": "test",
-            "level": "info",
-            "text": "🧪 Test message from GuardianBox\n\nIf you receive this, Telegram alerts are working!",
-            "time": datetime.now(timezone.utc).isoformat(),
-        })
         return {"status": "mock", "message": "Test message shown in dashboard preview"}
-    
+
     if not chat_ids:
         return {
             "status": "needs_chat_id",
-            "message": "Token is set but no chat IDs configured. Send /start to the bot to get your chat ID."
+            "message": "Token is set but no chat IDs configured. Send /start to the bot to get your chat ID.",
         }
-    
-    test_message = (
-        "🧪 *Test message from GuardianBox*\n\n"
-        "If you receive this, Telegram alerts are working\\!\n\n"
-        f"Time: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC"
-    )
-    
-    results = []
-    for chat_id in chat_ids:
-        try:
-            response = await http_client.post(
-                f"https://api.telegram.org/bot{token}/sendMessage",
-                json={
-                    "chat_id": chat_id,
-                    "text": test_message,
-                    "parse_mode": "MarkdownV2",
-                }
-            )
-            result = response.json()
-            results.append({"chat_id": chat_id, "ok": result.get("ok", False)})
-        except Exception as e:
-            logger.error(f"Failed to send Telegram test to {chat_id}: {e}")
-            results.append({"chat_id": chat_id, "ok": False, "error": str(e)})
-    
-    success_count = sum(1 for r in results if r.get("ok"))
-    
-    return {
-        "status": "live" if success_count > 0 else "failed",
-        "results": results,
-        "sent": success_count,
-        "total": len(chat_ids),
-    }
+
+    if not should_send_live_telegram(MOCK_MODE):
+        return {"status": "mock", "message": "Test message shown in dashboard preview"}
+
+    if not http_client:
+        raise HTTPException(status_code=503, detail="HTTP client not initialized")
+
+    try:
+        response = await http_client.post(
+            f"{NOTIFIER_URL}/test",
+            json={"chat_ids": chat_ids},
+        )
+        if response.status_code != 200:
+            return {
+                "status": "failed",
+                "results": [{"chat_id": cid, "ok": False} for cid in chat_ids],
+                "sent": 0,
+                "total": len(chat_ids),
+            }
+        data = response.json()
+        results = data.get("results", [])
+        success_count = sum(1 for r in results if r.get("ok"))
+        return {
+            "status": "sent" if success_count > 0 else "failed",
+            "results": results,
+            "sent": success_count,
+            "total": len(chat_ids),
+        }
+    except Exception as e:
+        logger.error(f"Failed to send Telegram test via notifier: {e}")
+        return {
+            "status": "failed",
+            "results": [{"chat_id": cid, "ok": False, "error": "send_failed"} for cid in chat_ids],
+            "sent": 0,
+            "total": len(chat_ids),
+        }
 
 
 async def broadcast_sse(event_type: str, data: dict):
