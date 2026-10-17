@@ -34,9 +34,21 @@ Many elderly parents in Malaysia live alone while their children work in another
 
 ## How It Works
 
-```
-Camera → Pose Detection → Fall Suspected? → VLM Confirms → Voice Check-in → Family Alert
-         (YOLO26n-pose)    (Nemotron Omni)      (STT)         (Telegram text)
+```mermaid
+flowchart TD
+    CAM["Camera in the living area"] --> POSE["Pose model YOLO26n-pose<br/>always on, on the Spark"]
+    POSE -->|"normal activity"| POSE
+    POSE -->|"person down and still"| VLM["Nemotron Omni VLM<br/>looks at the scene locally"]
+    VLM -->|"praying, sujud"| QUIET["Stay silent<br/>never interrupt prayer"]
+    VLM -->|"sitting or on the sofa"| POSE
+    VLM -->|"looks like a fall"| ASK["Voice check-in<br/>Malay, English or Mandarin"]
+    ASK --> STT["Speech to text<br/>Malaysian Whisper"]
+    STT -->|"I'm OK"| DOWN["Stand down<br/>and keep watching"]
+    STT -->|"help, pain, can't get up"| ALERT["Telegram text alert<br/>to family"]
+    STT -->|"silence after 3 tries"| ALERT
+    ALERT --> ACK["Family taps<br/>I'm on it"]
+    QUIET --> POSE
+    DOWN --> POSE
 ```
 
 1. **Pose model** (always on) watches for falls, distinguishes from normal activities
@@ -51,25 +63,46 @@ Camera → Pose Detection → Fall Suspected? → VLM Confirms → Voice Check-i
 
 ## Architecture
 
+```mermaid
+flowchart LR
+    subgraph HOME["Home"]
+        CAM["USB camera"]
+        MIC["Microphone"]
+        SPK["Speaker"]
+    end
+
+    subgraph SPARK["DGX Spark, GB10, ARM64, 128 GB"]
+        subgraph AI["AI internal network, no external route"]
+            VISION["Vision<br/>YOLO26n-pose TensorRT"]
+            VLLM["vLLM<br/>Nemotron-3-Nano-Omni<br/>VLM and agent"]
+            STT["STT<br/>Malaysian Whisper"]
+            VOICE["Voice<br/>pre-rendered clips + Kokoro-82M"]
+        end
+        subgraph APP["App network"]
+            ORCH["Orchestrator FastAPI<br/>state machine + decision table"]
+            DASH["Dashboard<br/>vanilla JS + SSE"]
+            NOTIFY["Notifier<br/>text only"]
+            PROXY["Egress proxy<br/>allowlist"]
+        end
+    end
+
+    TG["api.telegram.org<br/>family phone"]
+
+    CAM -->|"frames stay local"| VISION
+    MIC -->|"audio stays local"| STT
+    VISION -->|"pose events"| ORCH
+    ORCH -->|"frame for a second opinion"| VLLM
+    VLLM -->|"assessment JSON"| ORCH
+    STT -->|"transcript"| ORCH
+    ORCH -->|"phrase id"| VOICE
+    VOICE --> SPK
+    ORCH -->|"SSE events"| DASH
+    ORCH -->|"alert text"| NOTIFY
+    NOTIFY --> PROXY
+    PROXY -->|"text only, no media"| TG
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                    DGX Spark (GB10, ARM64, 128 GB)                      │
-├─────────────────────────────────────────────────────────────────────────┤
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │  AI-INTERNAL NETWORK (no external route)                         │   │
-│  │  • vLLM: Nemotron-3-Nano-Omni (VLM + Agent)                      │   │
-│  │  • Vision: YOLO26n-pose (TensorRT)                               │   │
-│  │  • STT: Malaysian Whisper                                        │   │
-│  │  • Voice: Pre-rendered clips + Kokoro-82M                        │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │  APP NETWORK                                                     │   │
-│  │  • Orchestrator (FastAPI): State machine, decision table, API    │   │
-│  │  • Dashboard (Vanilla JS + SSE): Timeline, GPU panel, egress     │   │
-│  │  • Notifier → Egress Proxy → api.telegram.org (text only)        │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────────┘
-```
+
+Only one line of text ever leaves the box. Video, frames and audio stay on the AI internal network, which has no route out.
 
 ---
 
