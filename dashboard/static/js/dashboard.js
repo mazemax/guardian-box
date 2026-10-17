@@ -737,20 +737,29 @@ Please call now. If it's an emergency, call 999.`;
         this.clearTimeline();
         this.showToast(`Running ${scenario} demo...`, 'info');
         
+        // Reset any active event before starting a new demo
+        try {
+            await fetch('/api/v1/demo/reset', { method: 'POST' });
+        } catch (e) {
+            console.log('Reset failed, continuing anyway:', e);
+        }
+        
         const scenarios = {
             fall: {
                 trigger_type: 'fast_fall',
                 torso_angle: 78,
                 stillness_seconds: 5,
                 rapid_descent: true,
-                zone: 'floor'
+                zone: 'floor',
+                _scenario: 'fall'
             },
             slow_collapse: {
                 trigger_type: 'slow_low_posture',
                 torso_angle: 65,
                 stillness_seconds: 20,
                 rapid_descent: false,
-                zone: 'floor'
+                zone: 'floor',
+                _scenario: 'slow_collapse'
             },
             prayer: {
                 trigger_type: 'slow_low_posture',
@@ -758,7 +767,8 @@ Please call now. If it's an emergency, call 999.`;
                 stillness_seconds: 8,
                 prayer_cycles: 4,
                 rapid_descent: false,
-                zone: 'prayer_area'
+                zone: 'prayer_area',
+                _scenario: 'prayer'
             },
             ok_reply: {
                 trigger_type: 'fast_fall',
@@ -766,6 +776,7 @@ Please call now. If it's an emergency, call 999.`;
                 stillness_seconds: 4,
                 rapid_descent: true,
                 zone: 'floor',
+                _scenario: 'ok_reply',
                 _simulate_reply: 'Saya okey'
             },
             silence: {
@@ -773,13 +784,19 @@ Please call now. If it's an emergency, call 999.`;
                 torso_angle: 80,
                 stillness_seconds: 5,
                 rapid_descent: true,
-                zone: 'floor'
+                zone: 'floor',
+                _scenario: 'silence'
             }
         };
         
         const data = scenarios[scenario] || scenarios.fall;
         const simulateReply = data._simulate_reply;
+        const scenarioName = data._scenario;
         delete data._simulate_reply;
+        delete data._scenario;
+        
+        // Add scenario hint for mock VLM
+        data.scenario = scenarioName;
         
         try {
             const res = await fetch('/api/v1/demo/pose-trigger', {

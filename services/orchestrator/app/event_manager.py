@@ -93,6 +93,7 @@ class EventManager:
         self._event_listeners: list[Callable[[str, dict], Awaitable[None]]] = []
         self._pending_reply: Optional[Dict[str, Any]] = None
         self._reply_event: asyncio.Event = asyncio.Event()
+        self.current_scenario: Optional[str] = None  # Demo scenario hint for mock VLM
         
         self.resident = Resident(
             display_name="Ahmad",
@@ -232,16 +233,7 @@ class EventManager:
         try:
             if self.mock_mode:
                 await asyncio.sleep(0.5)
-                result = VLMAssessment(
-                    person_visible=True,
-                    scene_class="fall",
-                    posture="lying_floor",
-                    movement="none_visible",
-                    fall_likelihood=0.85,
-                    confidence=0.82,
-                    description="Person lying on floor near sofa, not moving",
-                    reasons=["horizontal posture", "no movement", "near furniture"],
-                )
+                result = self._get_mock_vlm_result(event)
             else:
                 client = await self.get_http_client()
                 
@@ -283,6 +275,50 @@ class EventManager:
             await self._emit_event("model_run", model_run.model_dump())
             self.model_runs.append(model_run)
             return None
+    
+    def _get_mock_vlm_result(self, event: Event) -> VLMAssessment:
+        """Generate mock VLM result based on current scenario or pose data."""
+        pose = event.pose_summary
+        zone = pose.zone if pose else "floor"
+        prayer_cycles = pose.prayer_cycles if pose else 0
+        
+        # Scenario-aware mock VLM responses
+        if self.current_scenario == "prayer":
+            return VLMAssessment(
+                person_visible=True,
+                scene_class="prayer_sujud",
+                posture="prostrate_forehead_down",
+                movement="small",
+                fall_likelihood=0.05,
+                confidence=0.92,
+                description="Person in prayer position on prayer mat, rhythmic movement",
+                reasons=["on prayer mat", "sujud posture", "rhythmic cycles detected"],
+            )
+        
+        # If zone is prayer_area with prayer_cycles, return prayer scene
+        if zone == "prayer_area" and prayer_cycles >= 2:
+            return VLMAssessment(
+                person_visible=True,
+                scene_class="prayer_sujud",
+                posture="prostrate_forehead_down",
+                movement="small",
+                fall_likelihood=0.05,
+                confidence=0.90,
+                description="Person in prostration position on prayer mat",
+                reasons=["prayer area", "forehead on floor", f"{prayer_cycles} prayer cycles"],
+            )
+        
+        # Default fall scenario for other cases
+        return VLMAssessment(
+            person_visible=True,
+            scene_class="fall",
+            posture="lying_floor",
+            movement="none_visible",
+            fall_likelihood=0.85,
+            confidence=0.82,
+            description="Person lying on floor near sofa, not moving",
+            reasons=["horizontal posture", "no movement", "near furniture"],
+        )
     
     def _build_vlm_request(self, event: Event, frame_paths: list[str]) -> dict:
         """Build the VLM request with cultural context."""
@@ -790,6 +826,24 @@ Please give them a call.
                 await asyncio.sleep(0.2)
                 alert.status = "sent"
                 alert.sent_at = utc_now()
+                
+                # Emit telegram_preview SSE for dashboard mock preview
+                await self._emit_event("telegram_preview", {
+                    "type": "alert",
+                    "event_id": alert.event_id,
+                    "alert_id": alert.id,
+                    "level": alert.level,
+                    "contact": alert.contact_name,
+                    "text": alert.text,
+                    "snapshot_url": "/api/v1/vision/snapshot.jpg",
+                    "buttons": [
+                        {"id": "calling", "text": "📞 I'm calling them now"},
+                        {"id": "on_my_way", "text": "🚗 On my way"},
+                        {"id": "false_alarm", "text": "✅ False alarm"},
+                        {"id": "need_more_info", "text": "❓ Need more info"}
+                    ]
+                })
+                
                 return True
             
             client = await self.get_http_client()
@@ -902,3 +956,4 @@ Please give them a call.
         self.model_runs.clear()
         self._pending_reply = None
         self._reply_event = asyncio.Event()
+        self.current_scenario = None

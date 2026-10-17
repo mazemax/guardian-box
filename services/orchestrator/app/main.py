@@ -182,6 +182,7 @@ class PoseTriggerRequest(BaseModel):
     rapid_descent: bool = True
     zone: str = "floor"
     frame_paths: list[str] = []
+    scenario: Optional[str] = None  # Demo scenario hint for mock VLM
 
 
 class AckRequest(BaseModel):
@@ -476,9 +477,25 @@ async def demo_pose_trigger(req: PoseTriggerRequest, background_tasks: Backgroun
     This endpoint allows triggering the full pipeline without a camera.
     In production, the pipeline runs as a background task so the endpoint returns quickly.
     In test mode (RUN_PIPELINE_SYNC=true), it runs synchronously for deterministic testing.
+    
+    If an event is already active, it will be auto-resolved so the new demo can start.
     """
     if not event_manager:
         raise HTTPException(status_code=503, detail="Event manager not initialized")
+    
+    # Auto-resolve any existing active event so demos can run back-to-back
+    if event_manager.active_event:
+        old_event = event_manager.active_event
+        old_state = old_event.state
+        logger.info(f"Auto-resolving previous event {old_event.id} (state={old_state}) for new demo")
+        event_manager.reset()
+        
+        # Broadcast state change
+        await broadcast_sse("state", {
+            "state": "MONITORING",
+            "event_id": None,
+            "reason": f"Previous event auto-resolved for new demo (was {old_state})"
+        })
     
     pose_summary = PoseSummary(
         torso_angle=req.torso_angle,
@@ -493,9 +510,9 @@ async def demo_pose_trigger(req: PoseTriggerRequest, background_tasks: Backgroun
     
     trigger_type = TriggerType(req.trigger_type)
     
-    if event_manager.active_event:
-        event_manager.active_event.pose_summary = pose_summary
-        return {"event_id": event_manager.active_event.id, "state": event_manager.active_event.state, "existing": True}
+    # Store scenario hint for mock VLM
+    if req.scenario:
+        event_manager.current_scenario = req.scenario
     
     if RUN_PIPELINE_SYNC or MOCK_MODE:
         event = await event_manager.handle_pose_trigger(
