@@ -53,6 +53,7 @@ services:
     build:
       context: ./services/vision
       dockerfile: Dockerfile
+      network: host  # build with host networking; some Spark setups give the default build bridge no route out
     image: guardianbox-vision:latest
     container_name: guardianbox-vision
     profiles: ["gpu"]
@@ -84,6 +85,7 @@ services:
     build:
       context: ./services/stt
       dockerfile: Dockerfile
+      network: host  # build with host networking; some Spark setups give the default build bridge no route out
     image: guardianbox-stt:latest
     container_name: guardianbox-stt
     profiles: ["gpu"]
@@ -112,6 +114,7 @@ services:
     build:
       context: ./services/voice
       dockerfile: Dockerfile
+      network: host  # build with host networking; some Spark setups give the default build bridge no route out
     image: guardianbox-voice:latest
     container_name: guardianbox-voice
     profiles: ["gpu"]
@@ -139,6 +142,7 @@ services:
     build:
       context: ./services/vision
       dockerfile: Dockerfile.mock
+      network: host  # build with host networking; some Spark setups give the default build bridge no route out
     image: guardianbox-vision-mock:latest
     container_name: guardianbox-vision-mock
     profiles: ["mock"]
@@ -158,6 +162,7 @@ services:
     build:
       context: ./services/orchestrator
       dockerfile: Dockerfile.vlm-mock
+      network: host  # build with host networking; some Spark setups give the default build bridge no route out
     image: guardianbox-vlm-mock:latest
     container_name: guardianbox-vlm-mock
     profiles: ["mock"]
@@ -178,6 +183,7 @@ services:
     build:
       context: ./services/stt
       dockerfile: Dockerfile.mock
+      network: host  # build with host networking; some Spark setups give the default build bridge no route out
     image: guardianbox-stt-mock:latest
     container_name: guardianbox-stt-mock
     profiles: ["mock"]
@@ -196,6 +202,7 @@ services:
     build:
       context: ./services/voice
       dockerfile: Dockerfile.mock
+      network: host  # build with host networking; some Spark setups give the default build bridge no route out
     image: guardianbox-voice-mock:latest
     container_name: guardianbox-voice-mock
     profiles: ["mock"]
@@ -220,6 +227,7 @@ services:
     build:
       context: ./services/orchestrator
       dockerfile: Dockerfile
+      network: host  # build with host networking; some Spark setups give the default build bridge no route out
     image: guardianbox-orchestrator:latest
     container_name: guardianbox-orchestrator
     networks:
@@ -253,6 +261,7 @@ services:
     build:
       context: ./services/notifier
       dockerfile: Dockerfile
+      network: host  # build with host networking; some Spark setups give the default build bridge no route out
     image: guardianbox-notifier:latest
     container_name: guardianbox-notifier
     networks:
@@ -276,6 +285,7 @@ services:
     build:
       context: ./services/egress-proxy
       dockerfile: Dockerfile
+      network: host  # build with host networking; some Spark setups give the default build bridge no route out
     image: guardianbox-egress-proxy:latest
     container_name: guardianbox-egress-proxy
     networks:
@@ -294,6 +304,7 @@ services:
     build:
       context: ./dashboard
       dockerfile: Dockerfile
+      network: host  # build with host networking; some Spark setups give the default build bridge no route out
     image: guardianbox-dashboard:latest
     container_name: guardianbox-dashboard
     profiles: ["standalone-dashboard"]  # Only if running dashboard separately
