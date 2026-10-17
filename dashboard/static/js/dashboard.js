@@ -1,15 +1,18 @@
 /**
  * GuardianBox Dashboard
- * 
- * Vanilla JS + SSE for real-time updates from the orchestrator.
+ * Modern, dark, calm UI for fall detection monitoring
+ * Vanilla JS + SSE for real-time updates
  */
 
 class GuardianBoxDashboard {
     constructor() {
         this.eventSource = null;
         this.currentEventId = null;
-        this.presenterMode = false;
-        this.timeline = [];
+        this.currentState = 'MONITORING';
+        this.eventLog = [];
+        this.eventHistory = [];
+        this.telegramMessages = [];
+        this.clips = [];
         
         this.init();
     }
@@ -18,69 +21,82 @@ class GuardianBoxDashboard {
         this.bindElements();
         this.bindEvents();
         this.connectSSE();
-        this.fetchInitialStatus();
+        this.fetchInitialData();
+        this.loadClips();
+        this.startMetricsPolling();
     }
     
     bindElements() {
-        this.stateChip = document.getElementById('state-chip');
-        this.eventState = document.getElementById('event-state');
-        this.eventDetail = document.getElementById('event-detail');
-        this.eventActions = document.getElementById('event-actions');
-        this.eventCard = document.getElementById('event-card');
-        this.timelineEl = document.getElementById('timeline');
-        this.skeletonInfo = document.getElementById('skeleton-info');
-        this.skeletonFigure = document.getElementById('skeleton-figure');
+        // Header elements
+        this.stateBadge = document.getElementById('state-badge');
+        this.stateText = document.getElementById('state-text');
+        this.memoryDisplay = document.getElementById('memory-display');
+        this.gpuDisplay = document.getElementById('gpu-display');
+        this.egressDisplay = document.getElementById('egress-display');
+        this.metricInternet = document.getElementById('metric-internet');
         
-        this.egressMsgs = document.getElementById('egress-msgs');
-        this.egressBytes = document.getElementById('egress-bytes');
-        this.videoBytes = document.getElementById('video-bytes');
-        this.imageBytes = document.getElementById('image-bytes');
+        // Footage elements
+        this.footageContainer = document.getElementById('footage-container');
+        this.footagePlaceholder = document.getElementById('footage-placeholder');
+        this.footageStream = document.getElementById('footage-stream');
+        this.clipSelector = document.getElementById('clip-selector');
+        this.poseInfo = document.getElementById('pose-info');
         
-        this.memoryUsed = document.getElementById('memory-used');
-        this.memoryVal = document.getElementById('memory-val');
-        this.memoryBar = document.getElementById('memory-bar');
-        this.gpuUtil = document.getElementById('gpu-util');
-        this.gpuVal = document.getElementById('gpu-val');
-        this.gpuBar = document.getElementById('gpu-bar');
+        // Timeline elements
+        this.timelineStages = document.getElementById('timeline-stages');
+        this.eventLogList = document.getElementById('event-log-list');
         
-        this.internetChip = document.getElementById('internet-chip');
-        this.presenterBtn = document.getElementById('presenter-btn');
-        this.demoControls = document.getElementById('demo-controls');
-        this.exportBtn = document.getElementById('export-btn');
+        // Telegram elements
+        this.telegramMode = document.getElementById('telegram-mode');
+        this.phoneMessages = document.getElementById('phone-messages');
+        
+        // History elements
+        this.historyList = document.getElementById('history-list');
+        
+        // Toast container
+        this.toastContainer = document.getElementById('toast-container');
     }
     
     bindEvents() {
-        // Presenter mode toggle
-        this.presenterBtn.addEventListener('click', () => this.togglePresenterMode());
-        
-        // Demo scenario buttons
-        document.querySelectorAll('.demo-btn[data-scenario]').forEach(btn => {
-            btn.addEventListener('click', () => this.triggerScenario(btn.dataset.scenario));
+        // Demo buttons
+        document.querySelectorAll('.demo-btn').forEach(btn => {
+            btn.addEventListener('click', () => this.runDemo(btn.dataset.scenario));
         });
         
-        // Acknowledge button
-        document.getElementById('ack-btn')?.addEventListener('click', () => this.simulateAck());
+        // Clip selector
+        this.clipSelector?.addEventListener('change', (e) => {
+            if (e.target.value) {
+                this.selectClip(e.target.value);
+            }
+        });
         
-        // Offline simulation
-        document.getElementById('offline-btn')?.addEventListener('click', () => this.toggleOffline());
+        // Test Telegram button
+        document.getElementById('test-telegram-btn')?.addEventListener('click', () => {
+            this.sendTestTelegram();
+        });
         
-        // Profile selection
-        document.querySelectorAll('input[name="profile"]').forEach(radio => {
-            radio.addEventListener('change', () => this.setProfile(radio.value));
+        // Clear timeline
+        document.getElementById('clear-timeline-btn')?.addEventListener('click', () => {
+            this.clearTimeline();
         });
         
         // Export button
-        this.exportBtn.addEventListener('click', () => this.exportEvent());
+        document.getElementById('export-btn')?.addEventListener('click', () => {
+            this.exportEvent();
+        });
         
-        // Simulate reply
-        document.getElementById('simulate-reply')?.addEventListener('change', (e) => {
-            if (e.target.value) {
-                this.setSTTResponse(e.target.value);
-                e.target.value = '';
-            }
+        // Modal close
+        document.getElementById('modal-close')?.addEventListener('click', () => {
+            document.getElementById('event-modal').style.display = 'none';
+        });
+        
+        // Skeleton toggle
+        document.getElementById('skeleton-toggle')?.addEventListener('click', () => {
+            this.toggleSkeleton();
         });
     }
     
+    // ===== SSE Connection =====
     connectSSE() {
         if (this.eventSource) {
             this.eventSource.close();
@@ -90,308 +106,751 @@ class GuardianBoxDashboard {
         
         this.eventSource.onopen = () => {
             console.log('SSE connected');
+            this.showToast('Connected to GuardianBox', 'success');
         };
         
         this.eventSource.onerror = (e) => {
             console.error('SSE error:', e);
+            this.showToast('Connection lost, reconnecting...', 'warning');
             setTimeout(() => this.connectSSE(), 5000);
         };
         
+        // Event handlers
         this.eventSource.addEventListener('connected', (e) => {
-            console.log('SSE connected:', JSON.parse(e.data));
+            console.log('SSE handshake:', JSON.parse(e.data));
         });
         
         this.eventSource.addEventListener('state', (e) => {
-            const data = JSON.parse(e.data);
-            this.handleStateUpdate(data);
+            this.handleStateUpdate(JSON.parse(e.data));
         });
         
         this.eventSource.addEventListener('pose', (e) => {
-            const data = JSON.parse(e.data);
-            this.handlePoseUpdate(data);
+            this.handlePoseUpdate(JSON.parse(e.data));
         });
         
         this.eventSource.addEventListener('vlm_result', (e) => {
-            const data = JSON.parse(e.data);
-            this.handleVLMResult(data);
+            this.handleVLMResult(JSON.parse(e.data));
         });
         
         this.eventSource.addEventListener('checkin', (e) => {
-            const data = JSON.parse(e.data);
-            this.handleCheckIn(data);
+            this.handleCheckIn(JSON.parse(e.data));
         });
         
         this.eventSource.addEventListener('model_run', (e) => {
-            const data = JSON.parse(e.data);
-            this.handleModelRun(data);
+            this.handleModelRun(JSON.parse(e.data));
         });
         
         this.eventSource.addEventListener('alert', (e) => {
-            const data = JSON.parse(e.data);
-            this.handleAlert(data);
+            this.handleAlert(JSON.parse(e.data));
         });
         
         this.eventSource.addEventListener('ack', (e) => {
-            const data = JSON.parse(e.data);
-            this.handleAck(data);
+            this.handleAck(JSON.parse(e.data));
         });
         
-        this.eventSource.addEventListener('ping', () => {
-            // Keep-alive ping
+        this.eventSource.addEventListener('telegram_preview', (e) => {
+            this.handleTelegramPreview(JSON.parse(e.data));
         });
+        
+        this.eventSource.addEventListener('ping', () => {});
     }
     
-    async fetchInitialStatus() {
+    // ===== Data Fetching =====
+    async fetchInitialData() {
         try {
-            const response = await fetch('/api/v1/status');
-            const data = await response.json();
-            this.updateStatus(data);
-        } catch (e) {
-            console.error('Failed to fetch status:', e);
-        }
-    }
-    
-    updateStatus(data) {
-        this.updateStateChip(data.state);
-        
-        if (this.memoryUsed) {
-            this.memoryUsed.textContent = data.memory_used_gb.toFixed(0);
-            this.memoryVal.textContent = data.memory_used_gb.toFixed(0);
-            const memPct = (data.memory_used_gb / data.memory_total_gb * 100).toFixed(0);
-            this.memoryBar.style.width = `${memPct}%`;
-        }
-        
-        if (this.gpuUtil) {
-            this.gpuUtil.textContent = data.gpu_util_percent.toFixed(0);
-            this.gpuVal.textContent = data.gpu_util_percent.toFixed(0);
-            this.gpuBar.style.width = `${data.gpu_util_percent}%`;
-        }
-        
-        if (this.egressMsgs) {
-            this.egressMsgs.textContent = data.egress_messages_today;
-            this.egressBytes.textContent = this.formatBytes(data.egress_bytes_today);
-            this.videoBytes.textContent = data.video_bytes_out;
-            this.imageBytes.textContent = data.video_bytes_out;
-        }
-        
-        if (data.internet_reachable) {
-            this.internetChip.textContent = '🌐 Internet OK';
-            this.internetChip.classList.remove('offline');
-        } else {
-            this.internetChip.textContent = '📴 Internet DOWN';
-            this.internetChip.classList.add('offline');
-        }
-    }
-    
-    updateStateChip(state) {
-        this.stateChip.textContent = state;
-        this.stateChip.className = 'state-chip ' + state.toLowerCase().replace(/_/g, '-');
-        
-        if (this.eventState) {
-            this.eventState.textContent = state;
-            this.eventState.className = 'event-state';
-            if (state.includes('ALERT')) {
-                this.eventState.classList.add('alert');
+            // Fetch status
+            const statusRes = await fetch('/api/v1/status');
+            const status = await statusRes.json();
+            this.updateMetrics(status);
+            this.updateState(status.state);
+            
+            // Fetch events
+            const eventsRes = await fetch('/api/v1/events?limit=10');
+            const events = await eventsRes.json();
+            this.eventHistory = events;
+            this.renderHistory();
+            
+            // Pre-populate timeline from latest event
+            if (events.length > 0) {
+                this.populateTimelineFromEvent(events[0]);
             }
+            
+            // Check Telegram mode
+            const healthRes = await fetch('/api/v1/health');
+            const health = await healthRes.json();
+            if (health.telegram_connected) {
+                this.telegramMode.textContent = 'Live';
+                this.telegramMode.classList.add('live');
+            }
+        } catch (e) {
+            console.error('Failed to fetch initial data:', e);
         }
     }
     
+    async loadClips() {
+        try {
+            const res = await fetch('/api/v1/clips');
+            if (res.ok) {
+                this.clips = await res.json();
+                this.populateClipSelector();
+            }
+        } catch (e) {
+            console.log('No clips endpoint available');
+        }
+    }
+    
+    populateClipSelector() {
+        if (!this.clipSelector) return;
+        
+        this.clipSelector.innerHTML = '<option value="">Camera / Clip...</option>';
+        
+        // Default clip labels (used if API doesn't provide names)
+        const defaultClips = [
+            { path: 'samples/clip1.mp4', name: 'clip1 — Slow collapse (chest pain) → Alert' },
+            { path: 'samples/clip2.mp4', name: 'clip2 — Fast fall (walker) → Alert' },
+            { path: 'samples/clip3.mp4', name: 'clip3 — Prayer (sujud) → Quiet' },
+            { path: 'samples/clip4.mp4', name: 'clip4 — Slow collapse (dizzy) → Alert' },
+            { path: 'samples/clip5.mp4', name: 'clip5 — Normal walking → Quiet' },
+        ];
+        
+        const clipsToUse = this.clips.length > 0 ? this.clips : defaultClips;
+        
+        if (clipsToUse.length > 0) {
+            const group = document.createElement('optgroup');
+            group.label = 'Sample Clips';
+            clipsToUse.forEach(clip => {
+                const opt = document.createElement('option');
+                opt.value = clip.path;
+                opt.textContent = clip.name;
+                group.appendChild(opt);
+            });
+            this.clipSelector.appendChild(group);
+        }
+    }
+    
+    startMetricsPolling() {
+        setInterval(() => this.fetchMetrics(), 5000);
+    }
+    
+    async fetchMetrics() {
+        try {
+            const res = await fetch('/api/v1/status');
+            const data = await res.json();
+            this.updateMetrics(data);
+        } catch (e) {
+            // Silently fail
+        }
+    }
+    
+    // ===== Event Handlers =====
     handleStateUpdate(data) {
-        this.updateStateChip(data.state);
         this.currentEventId = data.event_id;
+        this.updateState(data.state);
         
-        let detail = '';
-        switch (data.state) {
-            case 'MONITORING':
-                detail = 'All quiet. GuardianBox is watching the living room.';
-                this.eventActions.style.display = 'none';
-                break;
-            case 'SUSPECTED':
-                detail = `Potential fall detected. Analyzing frames...`;
-                break;
-            case 'CONFIRMING':
-                detail = 'Sending frames to Nemotron vision for confirmation...';
-                break;
-            case 'CHECKING_IN':
-                detail = 'Asking if the resident is okay...';
-                this.eventActions.style.display = 'block';
-                break;
-            case 'LISTENING':
-                detail = 'Listening for response...';
-                break;
-            case 'ALERTING':
-                detail = 'Sending alert to family...';
-                break;
-            case 'AWAITING_ACK':
-                detail = 'Alert sent. Waiting for family response...';
-                break;
-            case 'RESOLVED':
-                detail = `Event resolved. ${data.reason || ''}`;
-                this.eventActions.style.display = 'none';
-                break;
-            case 'STOOD_DOWN':
-                detail = data.reason || 'Activity recognized as normal. Standing down.';
-                break;
-        }
+        this.addLogEntry('SYSTEM', `State → ${data.state}`, data.reason || '');
         
-        if (this.eventDetail) {
-            this.eventDetail.textContent = detail;
-        }
-        
-        this.addTimelineItem({
-            role: 'SYSTEM',
-            content: `State → ${data.state}`,
-            detail: data.reason || ''
-        });
+        // Update stages based on state
+        this.updateStageForState(data.state, data);
     }
     
     handlePoseUpdate(data) {
-        if (this.skeletonInfo) {
-            this.skeletonInfo.textContent = 
-                `zone: ${data.zone || 'floor'} · torso ${data.torso_angle?.toFixed(0) || 0}° · still ${data.stillness_seconds?.toFixed(1) || 0} s`;
+        // Update pose info overlay
+        const poseInfo = document.getElementById('pose-info');
+        if (poseInfo) {
+            poseInfo.querySelector('.pose-zone').textContent = `zone: ${data.zone || '--'}`;
+            poseInfo.querySelector('.pose-angle').textContent = `torso: ${data.torso_angle?.toFixed(0) || '--'}°`;
+            poseInfo.querySelector('.pose-still').textContent = `still: ${data.stillness_seconds?.toFixed(1) || '--'}s`;
         }
         
-        // Update skeleton figure based on torso angle
-        if (this.skeletonFigure && data.torso_angle) {
-            const angle = data.torso_angle;
-            this.skeletonFigure.setAttribute('transform', 
-                `translate(200, 150) rotate(${Math.min(angle, 90)})`);
-        }
+        // Update pose stage
+        this.setStageStatus('pose', 'done', 
+            `Trigger: torso ${data.torso_angle?.toFixed(0)}°, still ${data.stillness_seconds?.toFixed(1)}s`);
     }
     
     handleVLMResult(data) {
         const assessment = data.assessment;
         const decision = data.decision;
         
-        let content = '';
         if (assessment) {
-            content = `"${assessment.scene_class}" (conf: ${assessment.confidence.toFixed(2)})`;
+            this.setStageStatus('vlm', 'done',
+                `${assessment.scene_class} (conf: ${assessment.confidence.toFixed(2)})`);
+            this.addLogEntry('VLM', `"${assessment.scene_class}"`, assessment.description || '');
         } else {
-            content = 'VLM unavailable - proceeding with check-in';
+            this.setStageStatus('vlm', 'skipped', 'VLM unavailable');
+            this.addLogEntry('VLM', 'Unavailable', 'Proceeding with check-in');
         }
         
-        this.addTimelineItem({
-            role: 'VISION',
-            model: 'Nemotron Omni',
-            content: content,
-            detail: assessment?.description || '',
-            json: assessment
-        });
-        
         if (decision) {
-            this.addTimelineItem({
-                role: 'AGENT',
-                model: 'Nemotron Omni',
-                content: `${decision.rule}: ${decision.outcome}`,
-                detail: decision.reason
-            });
+            this.setStageStatus('decision', 'done', `${decision.rule}: ${decision.outcome}`);
+            this.addLogEntry('SYSTEM', `Decision: ${decision.rule}`, decision.reason);
         }
     }
     
     handleCheckIn(data) {
         if (data.state === 'listening') {
-            this.addTimelineItem({
-                role: 'VOICE',
-                content: `▶ ${data.phrase_id} (${data.lang})`,
-                detail: `Attempt ${data.attempt}/3`
-            });
-            
-            this.addTimelineItem({
-                role: 'STT',
-                model: 'Malaysian Whisper',
-                content: `Listening...`,
-                detail: ''
-            });
+            this.setStageStatus('checkin', 'active', `Playing: ${data.phrase_id} (${data.lang})`);
+            this.setStageStatus('stt', 'active', 'Listening...');
+            this.addLogEntry('VOICE', `▶ ${data.phrase_id}`, `Attempt ${data.attempt}/3 (${data.lang})`);
         } else if (data.state === 'classified') {
-            // Update the last STT item
-            const lastSTT = this.timeline.find(t => t.role === 'STT' && t.content === 'Listening...');
-            if (lastSTT) {
-                lastSTT.content = data.transcript ? `"${data.transcript}"` : '(no speech)';
-                lastSTT.detail = data.intent ? `Intent: ${data.intent}` : '';
-                if (data.keyword) {
-                    lastSTT.detail += ` (keyword: ${data.keyword})`;
-                }
-            }
-            this.renderTimeline();
+            const transcript = data.transcript ? `"${data.transcript}"` : '(no speech)';
+            this.setStageStatus('stt', 'done', `${transcript} → ${data.intent}`);
+            this.addLogEntry('STT', transcript, `Intent: ${data.intent}${data.keyword ? ` (keyword: ${data.keyword})` : ''}`);
         }
     }
     
     handleModelRun(data) {
-        // Model runs are shown in context, not separately
+        // Add to log if interesting
+        if (data.error) {
+            this.addLogEntry(data.role.toUpperCase(), 'Error', data.error);
+        }
     }
     
     handleAlert(data) {
-        this.addTimelineItem({
-            role: 'ALERT',
-            content: `Alert sent to ${data.contact}`,
-            detail: `Level: ${data.level}, Status: ${data.status}`
+        this.setStageStatus('alert', 'done', `Sent to ${data.contact} (${data.status})`);
+        this.addLogEntry('ALERT', `Alert sent to ${data.contact}`, `Level: ${data.level}`);
+        
+        // Create Telegram preview
+        this.addTelegramMessage({
+            type: 'alert',
+            level: data.level,
+            contact: data.contact,
+            event_id: data.event_id,
+            text: data.text || this.generateAlertText(data),
         });
         
-        // Update egress counter
-        this.fetchEgress();
+        this.showToast(`Alert sent to ${data.contact}`, 'warning');
     }
     
     handleAck(data) {
-        this.addTimelineItem({
-            role: 'SYSTEM',
-            content: `✔ ${data.contact} acknowledged: "${data.action}"`,
-            detail: ''
-        });
+        this.addLogEntry('SYSTEM', `✔ ${data.contact} acknowledged`, data.action);
+        
+        // Update Telegram preview with ack
+        this.addTelegramAck(data);
+        
+        this.showToast(`${data.contact} responded: ${data.action}`, 'success');
     }
     
-    addTimelineItem(item) {
-        const now = new Date();
-        const time = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    handleTelegramPreview(data) {
+        this.addTelegramMessage(data);
+    }
+    
+    // ===== UI Updates =====
+    updateState(state) {
+        this.currentState = state;
         
-        this.timeline.unshift({
-            time,
-            ...item
-        });
-        
-        // Keep only last 50 items
-        if (this.timeline.length > 50) {
-            this.timeline = this.timeline.slice(0, 50);
+        if (this.stateBadge) {
+            this.stateBadge.dataset.state = state;
+        }
+        if (this.stateText) {
+            this.stateText.textContent = state.replace(/_/g, ' ');
         }
         
-        this.renderTimeline();
+        // Update resident status
+        const statusDot = document.querySelector('.status-dot');
+        const statusText = document.querySelector('.resident-status span:last-child');
+        if (statusDot && statusText) {
+            if (state === 'MONITORING' || state === 'ARMED') {
+                statusDot.className = 'status-dot active';
+                statusText.textContent = 'Monitoring';
+            } else if (state.includes('ALERT')) {
+                statusDot.className = 'status-dot';
+                statusDot.style.background = 'var(--accent-red)';
+                statusText.textContent = 'Alerting';
+            } else {
+                statusDot.className = 'status-dot';
+                statusDot.style.background = 'var(--accent-amber)';
+                statusText.textContent = state.replace(/_/g, ' ');
+            }
+        }
     }
     
-    renderTimeline() {
-        if (!this.timelineEl) return;
+    updateMetrics(data) {
+        if (this.memoryDisplay && data.memory_used_gb !== undefined) {
+            const used = data.memory_used_gb.toFixed(0);
+            const total = data.memory_total_gb?.toFixed(0) || 128;
+            this.memoryDisplay.textContent = `${used}/${total} GB`;
+        }
         
-        if (this.timeline.length === 0) {
-            this.timelineEl.innerHTML = '<div class="timeline-empty">Events will appear here when activity is detected.</div>';
+        if (this.gpuDisplay && data.gpu_util_percent !== undefined) {
+            this.gpuDisplay.textContent = `${data.gpu_util_percent.toFixed(0)}%`;
+        }
+        
+        if (this.egressDisplay) {
+            const bytes = data.egress_bytes_today || 0;
+            this.egressDisplay.textContent = this.formatBytes(bytes);
+        }
+        
+        if (this.metricInternet) {
+            if (data.internet_reachable === false) {
+                this.metricInternet.classList.add('offline');
+                this.metricInternet.querySelector('.metric-value').textContent = 'Offline';
+            } else {
+                this.metricInternet.classList.remove('offline');
+                this.metricInternet.querySelector('.metric-value').textContent = 'Online';
+            }
+        }
+        
+        // Update video/image bytes
+        const videoBytes = document.getElementById('video-bytes-out');
+        const imageBytes = document.getElementById('image-bytes-out');
+        if (videoBytes) videoBytes.textContent = data.video_bytes_out || 0;
+        if (imageBytes) imageBytes.textContent = data.video_bytes_out || 0;
+    }
+    
+    // ===== Timeline Stages =====
+    setStageStatus(stageId, status, detail) {
+        const stage = document.getElementById(`stage-${stageId}`);
+        if (!stage) return;
+        
+        stage.dataset.status = status;
+        
+        const detailEl = document.getElementById(`stage-${stageId}-detail`);
+        if (detailEl && detail) {
+            detailEl.textContent = detail;
+        }
+        
+        const timeEl = document.getElementById(`stage-${stageId}-time`);
+        if (timeEl && status !== 'pending') {
+            timeEl.textContent = this.formatTime(new Date());
+        }
+    }
+    
+    updateStageForState(state, data) {
+        switch (state) {
+            case 'SUSPECTED':
+                this.setStageStatus('pose', 'active', 'Fall suspected...');
+                break;
+            case 'CONFIRMING':
+                this.setStageStatus('pose', 'done', data.reason || 'Trigger detected');
+                this.setStageStatus('vlm', 'active', 'Analyzing frames...');
+                break;
+            case 'CHECKING_IN':
+                this.setStageStatus('checkin', 'active', 'Starting check-in...');
+                break;
+            case 'LISTENING':
+                this.setStageStatus('stt', 'active', 'Listening for response...');
+                break;
+            case 'DECIDING':
+                this.setStageStatus('decision', 'active', 'Evaluating response...');
+                break;
+            case 'ALERTING':
+                this.setStageStatus('alert', 'active', 'Sending alert...');
+                break;
+            case 'AWAITING_ACK':
+                this.setStageStatus('alert', 'done', 'Alert sent, waiting for response');
+                break;
+            case 'RESOLVED':
+            case 'STOOD_DOWN':
+                this.resetStages();
+                this.addToHistory(data);
+                break;
+            case 'MONITORING':
+                this.resetStages();
+                break;
+        }
+    }
+    
+    resetStages() {
+        ['pose', 'vlm', 'checkin', 'stt', 'decision', 'alert'].forEach(id => {
+            this.setStageStatus(id, 'pending', 'Waiting...');
+            const timeEl = document.getElementById(`stage-${id}-time`);
+            if (timeEl) timeEl.textContent = '--:--:--';
+        });
+    }
+    
+    populateTimelineFromEvent(event) {
+        if (!event) return;
+        
+        // Reset first
+        this.resetStages();
+        this.eventLog = [];
+        
+        // Populate from event data
+        if (event.trigger) {
+            this.setStageStatus('pose', 'done', `Trigger: ${event.trigger}`);
+        }
+        
+        if (event.vlm_assessment) {
+            this.setStageStatus('vlm', 'done', 
+                `${event.vlm_assessment.scene_class} (${event.vlm_assessment.confidence.toFixed(2)})`);
+        }
+        
+        if (event.check_in_attempts?.length > 0) {
+            const last = event.check_in_attempts[event.check_in_attempts.length - 1];
+            this.setStageStatus('checkin', 'done', `${last.phrase_id} played`);
+            this.setStageStatus('stt', 'done', 
+                last.transcript ? `"${last.transcript}" → ${last.intent}` : `(silence) → ${last.intent}`);
+        }
+        
+        if (event.decision_row) {
+            this.setStageStatus('decision', 'done', event.decision_row);
+        }
+        
+        if (event.alerts?.length > 0) {
+            this.setStageStatus('alert', 'done', `Sent (${event.alerts.length} alerts)`);
+        }
+        
+        this.renderEventLog();
+    }
+    
+    // ===== Event Log =====
+    addLogEntry(role, message, detail) {
+        const entry = {
+            time: this.formatTime(new Date()),
+            role,
+            message,
+            detail
+        };
+        
+        this.eventLog.unshift(entry);
+        if (this.eventLog.length > 50) {
+            this.eventLog.pop();
+        }
+        
+        this.renderEventLog();
+    }
+    
+    renderEventLog() {
+        if (!this.eventLogList) return;
+        
+        if (this.eventLog.length === 0) {
+            this.eventLogList.innerHTML = '<div class="phone-empty"><p>No events yet</p></div>';
             return;
         }
         
-        this.timelineEl.innerHTML = this.timeline.map(item => `
-            <div class="timeline-item">
-                <span class="timeline-time">${item.time}</span>
-                <span class="timeline-role ${item.role.toLowerCase()}">${item.role}</span>
-                <div class="timeline-content">
-                    ${item.model ? `<span class="timeline-model">${item.model}</span>` : ''}
-                    <div class="timeline-output">${item.content}</div>
-                    ${item.detail ? `<div class="timeline-output" style="color: var(--text-secondary)">${item.detail}</div>` : ''}
-                </div>
-                ${item.latency ? `<span class="timeline-latency">${item.latency}ms</span>` : ''}
+        this.eventLogList.innerHTML = this.eventLog.map(entry => `
+            <div class="log-item">
+                <span class="log-time">${entry.time}</span>
+                <span class="log-role ${entry.role.toLowerCase()}">${entry.role}</span>
+                <span class="log-message">${entry.message}${entry.detail ? ` <span style="color:var(--text-muted)">${entry.detail}</span>` : ''}</span>
             </div>
         `).join('');
     }
     
-    async fetchEgress() {
+    clearTimeline() {
+        this.resetStages();
+        this.eventLog = [];
+        this.renderEventLog();
+        this.telegramMessages = [];
+        this.renderTelegramMessages();
+    }
+    
+    // ===== Telegram Preview =====
+    addTelegramMessage(data) {
+        this.telegramMessages.push({
+            ...data,
+            time: new Date()
+        });
+        this.renderTelegramMessages();
+    }
+    
+    addTelegramAck(data) {
+        // Find the related message and add ack info
+        const msg = this.telegramMessages.find(m => m.event_id === data.event_id);
+        if (msg) {
+            msg.ack = data;
+        }
+        this.renderTelegramMessages();
+    }
+    
+    renderTelegramMessages() {
+        if (!this.phoneMessages) return;
+        
+        if (this.telegramMessages.length === 0) {
+            this.phoneMessages.innerHTML = `
+                <div class="phone-empty">
+                    <span>📱</span>
+                    <p>Telegram messages will appear here</p>
+                    <p class="hint">Run a demo to see the alert flow</p>
+                </div>`;
+            return;
+        }
+        
+        this.phoneMessages.innerHTML = this.telegramMessages.map(msg => {
+            if (msg.type === 'alert') {
+                return this.renderTelegramAlert(msg);
+            }
+            return '';
+        }).join('');
+        
+        // Scroll to bottom
+        this.phoneMessages.scrollTop = this.phoneMessages.scrollHeight;
+    }
+    
+    renderTelegramAlert(msg) {
+        const levelEmoji = msg.level === 'urgent' ? '🚨' : '⚠️';
+        const levelClass = msg.level === 'urgent' ? 'urgent' : '';
+        
+        const text = msg.text || this.generateAlertText(msg);
+        
+        let ackHtml = '';
+        if (msg.ack) {
+            ackHtml = `<div style="margin-top:8px;color:var(--accent-green);font-size:11px">✔ ${msg.ack.contact}: ${msg.ack.action}</div>`;
+        }
+        
+        return `
+            <div class="tg-message">
+                <div class="tg-bubble">
+                    <div class="tg-level ${levelClass}">${levelEmoji} ${msg.level?.toUpperCase() || 'ALERT'}</div>
+                    <div class="tg-body">${text}</div>
+                    <div class="tg-footer">No photos or video are ever sent.</div>
+                    ${ackHtml}
+                </div>
+                <div class="tg-buttons">
+                    <button class="tg-btn" onclick="dashboard.sendAck('${msg.event_id}', 'calling')">📞 Calling</button>
+                    <button class="tg-btn" onclick="dashboard.sendAck('${msg.event_id}', 'on_my_way')">🏃 On my way</button>
+                    <button class="tg-btn" onclick="dashboard.sendAck('${msg.event_id}', 'false_alarm')">✅ False alarm</button>
+                    <button class="tg-btn" onclick="dashboard.sendAck('${msg.event_id}', 'call_999_info')">🆘 999 info</button>
+                </div>
+                <div class="tg-time">${this.formatTime(msg.time)}</div>
+            </div>
+        `;
+    }
+    
+    generateAlertText(data) {
+        return `${data.contact || 'Ahmad'} · Living room · ${this.formatTime(new Date())} (MYT)
+
+What GuardianBox saw: Person on the floor, not moving.
+What it tried: Asked 3 times. No reply.
+
+Please call now. If it's an emergency, call 999.`;
+    }
+    
+    async sendAck(eventId, action) {
         try {
-            const response = await fetch('/api/v1/egress');
-            const data = await response.json();
+            const res = await fetch('/api/v1/demo/ack', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ event_id: eventId, action })
+            });
             
-            if (this.egressMsgs) {
-                this.egressMsgs.textContent = data.messages_today;
-                this.egressBytes.textContent = this.formatBytes(data.bytes_today);
-                this.videoBytes.textContent = data.video_bytes_out;
-                this.imageBytes.textContent = data.image_bytes_out;
+            if (res.ok) {
+                this.showToast(`Acknowledged: ${action}`, 'success');
             }
         } catch (e) {
-            console.error('Failed to fetch egress:', e);
+            console.error('Failed to send ack:', e);
+            this.showToast('Failed to send acknowledgement', 'error');
         }
+    }
+    
+    // ===== History =====
+    addToHistory(data) {
+        const event = {
+            id: data.event_id || this.currentEventId,
+            state: data.state,
+            time: new Date(),
+            reason: data.reason
+        };
+        
+        this.eventHistory.unshift(event);
+        if (this.eventHistory.length > 20) {
+            this.eventHistory.pop();
+        }
+        
+        this.renderHistory();
+    }
+    
+    renderHistory() {
+        if (!this.historyList) return;
+        
+        if (this.eventHistory.length === 0) {
+            this.historyList.innerHTML = '<div class="history-empty">No events yet</div>';
+            return;
+        }
+        
+        this.historyList.innerHTML = this.eventHistory.slice(0, 10).map(event => {
+            const icon = event.state?.includes('ALERT') ? '🚨' : 
+                        event.state === 'RESOLVED' ? '✅' : 
+                        event.state === 'STOOD_DOWN' ? '🕌' : '📋';
+            
+            const badge = event.state?.includes('ALERT') ? 'alert' : 'resolved';
+            
+            const timeStr = event.started_at ? 
+                new Date(event.started_at).toLocaleTimeString() : 
+                (event.time ? this.formatTime(event.time) : '--:--');
+            
+            return `
+                <div class="history-item" onclick="dashboard.showEventDetail('${event.id}')">
+                    <div class="history-icon">${icon}</div>
+                    <div class="history-info">
+                        <div class="history-title">${event.trigger || event.state || 'Event'}</div>
+                        <div class="history-time">${timeStr}</div>
+                    </div>
+                    <span class="history-badge ${badge}">${event.decision_row || event.state || ''}</span>
+                </div>
+            `;
+        }).join('');
+    }
+    
+    async showEventDetail(eventId) {
+        try {
+            const res = await fetch(`/api/v1/events/${eventId}`);
+            if (res.ok) {
+                const event = await res.json();
+                document.getElementById('modal-body').innerHTML = `<pre>${JSON.stringify(event, null, 2)}</pre>`;
+                document.getElementById('event-modal').style.display = 'flex';
+            }
+        } catch (e) {
+            console.error('Failed to load event detail:', e);
+        }
+    }
+    
+    // ===== Demo Actions =====
+    async runDemo(scenario) {
+        this.clearTimeline();
+        this.showToast(`Running ${scenario} demo...`, 'info');
+        
+        const scenarios = {
+            fall: {
+                trigger_type: 'fast_fall',
+                torso_angle: 78,
+                stillness_seconds: 5,
+                rapid_descent: true,
+                zone: 'floor'
+            },
+            slow_collapse: {
+                trigger_type: 'slow_low_posture',
+                torso_angle: 65,
+                stillness_seconds: 20,
+                rapid_descent: false,
+                zone: 'floor'
+            },
+            prayer: {
+                trigger_type: 'slow_low_posture',
+                torso_angle: 85,
+                stillness_seconds: 8,
+                prayer_cycles: 4,
+                rapid_descent: false,
+                zone: 'prayer_area'
+            },
+            ok_reply: {
+                trigger_type: 'fast_fall',
+                torso_angle: 70,
+                stillness_seconds: 4,
+                rapid_descent: true,
+                zone: 'floor',
+                _simulate_reply: 'Saya okey'
+            },
+            silence: {
+                trigger_type: 'fast_fall',
+                torso_angle: 80,
+                stillness_seconds: 5,
+                rapid_descent: true,
+                zone: 'floor'
+            }
+        };
+        
+        const data = scenarios[scenario] || scenarios.fall;
+        const simulateReply = data._simulate_reply;
+        delete data._simulate_reply;
+        
+        try {
+            const res = await fetch('/api/v1/demo/pose-trigger', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            
+            if (res.ok) {
+                const result = await res.json();
+                console.log('Demo triggered:', result);
+                
+                // If this scenario has a simulated reply, inject it after a delay
+                if (simulateReply) {
+                    setTimeout(() => this.simulateReply(simulateReply), 2000);
+                }
+            }
+        } catch (e) {
+            console.error('Failed to run demo:', e);
+            this.showToast('Failed to run demo', 'error');
+        }
+    }
+    
+    async simulateReply(transcript) {
+        try {
+            const res = await fetch('/api/v1/demo/simulate-reply', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ transcript, lang: 'ms' })
+            });
+            
+            if (res.ok) {
+                console.log('Simulated reply:', transcript);
+            }
+        } catch (e) {
+            console.log('Failed to simulate reply:', e);
+        }
+    }
+    
+    async selectClip(clipPath) {
+        try {
+            const res = await fetch('/api/v1/vision/source', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ source: clipPath })
+            });
+            
+            if (res.ok) {
+                this.showToast(`Switched to ${clipPath}`, 'success');
+                this.startVideoStream();
+            }
+        } catch (e) {
+            console.error('Failed to select clip:', e);
+        }
+    }
+    
+    startVideoStream() {
+        if (this.footageStream && this.footagePlaceholder) {
+            this.footageStream.src = '/api/v1/vision/stream.mjpg?' + Date.now();
+            this.footageStream.style.display = 'block';
+            this.footagePlaceholder.style.display = 'none';
+            
+            this.footageStream.onerror = () => {
+                this.footageStream.style.display = 'none';
+                this.footagePlaceholder.style.display = 'flex';
+            };
+        }
+    }
+    
+    toggleSkeleton() {
+        // Toggle between skeleton overlay and regular view
+        this.showToast('Skeleton overlay toggled', 'info');
+    }
+    
+    async sendTestTelegram() {
+        try {
+            const res = await fetch('/api/v1/telegram/test', {
+                method: 'POST'
+            });
+            
+            if (res.ok) {
+                this.showToast('Test message sent!', 'success');
+            } else {
+                const data = await res.json();
+                this.showToast(data.detail || 'Failed to send test message', 'error');
+            }
+        } catch (e) {
+            console.error('Failed to send test:', e);
+            this.showToast('Failed to send test message', 'error');
+        }
+    }
+    
+    async exportEvent() {
+        if (!this.currentEventId) {
+            this.showToast('No active event to export', 'warning');
+            return;
+        }
+        
+        window.open(`/api/v1/events/${this.currentEventId}/export`, '_blank');
+    }
+    
+    // ===== Utilities =====
+    formatTime(date) {
+        return date.toLocaleTimeString('en-GB', { 
+            hour: '2-digit', 
+            minute: '2-digit', 
+            second: '2-digit' 
+        });
     }
     
     formatBytes(bytes) {
@@ -402,135 +861,17 @@ class GuardianBoxDashboard {
         return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
     }
     
-    togglePresenterMode() {
-        this.presenterMode = !this.presenterMode;
-        document.body.classList.toggle('presenter-mode', this.presenterMode);
-        this.presenterBtn.classList.toggle('active', this.presenterMode);
-        this.demoControls.style.display = this.presenterMode ? 'block' : 'none';
-    }
-    
-    async triggerScenario(scenario) {
-        try {
-            const scenarios = {
-                fall: {
-                    trigger_type: 'fast_fall',
-                    torso_angle: 78,
-                    stillness_seconds: 5,
-                    rapid_descent: true,
-                    zone: 'floor'
-                },
-                prayer: {
-                    trigger_type: 'slow_low_posture',
-                    torso_angle: 85,
-                    stillness_seconds: 8,
-                    prayer_cycles: 3,
-                    rapid_descent: false,
-                    zone: 'prayer_area'
-                },
-                sitting: {
-                    trigger_type: 'slow_low_posture',
-                    torso_angle: 45,
-                    stillness_seconds: 15,
-                    rapid_descent: false,
-                    zone: 'floor'
-                }
-            };
-            
-            const data = scenarios[scenario] || scenarios.fall;
-            
-            const response = await fetch('/api/v1/demo/pose-trigger', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data)
-            });
-            
-            const result = await response.json();
-            console.log('Triggered scenario:', result);
-            
-        } catch (e) {
-            console.error('Failed to trigger scenario:', e);
-        }
-    }
-    
-    async simulateAck() {
-        if (!this.currentEventId) {
-            console.warn('No current event to acknowledge');
-            return;
-        }
+    showToast(message, type = 'info') {
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        toast.innerHTML = `<span>${message}</span>`;
         
-        try {
-            const response = await fetch('/api/v1/demo/ack', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    event_id: this.currentEventId,
-                    action: 'calling'
-                })
-            });
-            
-            const result = await response.json();
-            console.log('Acknowledged:', result);
-            
-        } catch (e) {
-            console.error('Failed to acknowledge:', e);
-        }
-    }
-    
-    async toggleOffline() {
-        try {
-            const response = await fetch('/api/v1/network/simulate-offline', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ on: true })
-            });
-            
-            const result = await response.json();
-            console.log('Offline simulation:', result);
-            
-        } catch (e) {
-            console.error('Failed to toggle offline:', e);
-        }
-    }
-    
-    async setProfile(profile) {
-        try {
-            const response = await fetch('/api/v1/demo/profile', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ profile })
-            });
-            
-            const result = await response.json();
-            console.log('Profile set:', result);
-            
-        } catch (e) {
-            console.error('Failed to set profile:', e);
-        }
-    }
-    
-    async setSTTResponse(mode) {
-        try {
-            const response = await fetch(`http://localhost:8001/response-mode/${mode}`, {
-                method: 'POST'
-            });
-            console.log('STT mode set:', mode);
-        } catch (e) {
-            // STT service might not be accessible directly
-            console.log('STT mode change attempted:', mode);
-        }
-    }
-    
-    async exportEvent() {
-        if (!this.currentEventId) {
-            console.warn('No current event to export');
-            return;
-        }
+        this.toastContainer.appendChild(toast);
         
-        try {
-            window.open(`/api/v1/events/${this.currentEventId}/export`, '_blank');
-        } catch (e) {
-            console.error('Failed to export:', e);
-        }
+        setTimeout(() => {
+            toast.style.opacity = '0';
+            setTimeout(() => toast.remove(), 300);
+        }, 3000);
     }
 }
 

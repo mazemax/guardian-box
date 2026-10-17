@@ -10,146 +10,292 @@
     <!-- Header -->
     <header class="header">
         <div class="header-left">
-            <span class="logo">◉</span>
-            <span class="brand">GuardianBox</span>
-            <span class="state-chip" id="state-chip">MONITORING</span>
-            <span class="privacy-banner" title="Frames stay in memory on this DGX Spark and are deleted after each check. Only text alerts go to Telegram.">
-                🔒 No video leaves this box
-            </span>
+            <div class="logo-group">
+                <span class="logo">◉</span>
+                <span class="brand">GuardianBox</span>
+            </div>
+            <div class="state-badge" id="state-badge">
+                <span class="state-icon">●</span>
+                <span class="state-text" id="state-text">ARMED</span>
+            </div>
+            <div class="privacy-badge" title="Video stays in RAM on this DGX Spark. Only text alerts go to Telegram.">
+                <span class="lock-icon">🔒</span>
+                <span>No video leaves this box</span>
+            </div>
         </div>
         <div class="header-right">
-            <span class="egress-counter" id="egress-counter">
-                ↑ Egress today: <span id="egress-msgs">0</span> msgs · <span id="egress-bytes">0</span> B
-            </span>
-            <span class="internet-chip" id="internet-chip">🌐 Internet OK</span>
-            <span class="gpu-chip" id="gpu-chip">▤ ATOM <span id="memory-used">74</span>/<span id="memory-total">128</span> GB · GPU <span id="gpu-util">18</span>%</span>
-            <button class="presenter-btn" id="presenter-btn" title="Toggle presenter mode">⏻ Presenter</button>
+            <div class="metrics-strip">
+                <div class="metric-item" id="metric-memory">
+                    <span class="metric-icon">▤</span>
+                    <span class="metric-label">Memory</span>
+                    <span class="metric-value" id="memory-display">--/128 GB</span>
+                </div>
+                <div class="metric-item" id="metric-gpu">
+                    <span class="metric-icon">◈</span>
+                    <span class="metric-label">GPU</span>
+                    <span class="metric-value" id="gpu-display">--%</span>
+                </div>
+                <div class="metric-item" id="metric-egress">
+                    <span class="metric-icon">↑</span>
+                    <span class="metric-label">Egress</span>
+                    <span class="metric-value" id="egress-display">0 B</span>
+                </div>
+                <div class="metric-item internet" id="metric-internet">
+                    <span class="metric-icon">🌐</span>
+                    <span class="metric-value">Online</span>
+                </div>
+            </div>
+            <button class="btn btn-icon" id="settings-btn" title="Settings">⚙</button>
         </div>
     </header>
 
     <!-- Main Content -->
-    <main class="main-content">
-        <!-- Left Panel: Skeleton View -->
-        <section class="panel skeleton-panel">
-            <h2>Skeleton View (no video)</h2>
-            <div class="skeleton-view" id="skeleton-view">
-                <svg viewBox="0 0 400 300" class="skeleton-svg">
-                    <!-- Floor line -->
-                    <line x1="0" y1="250" x2="400" y2="250" stroke="#3b82f6" stroke-width="2" stroke-dasharray="5,5"/>
-                    <text x="10" y="265" fill="#64748b" font-size="12">floor</text>
-                    
-                    <!-- Skeleton figure (updated by JS) -->
-                    <g id="skeleton-figure" transform="translate(200, 150)">
-                        <!-- Head -->
-                        <circle cx="0" cy="-60" r="15" fill="none" stroke="#22c55e" stroke-width="3"/>
-                        <!-- Torso -->
-                        <line x1="0" y1="-45" x2="0" y2="20" stroke="#22c55e" stroke-width="3"/>
-                        <!-- Arms -->
-                        <line x1="0" y1="-30" x2="-40" y2="0" stroke="#22c55e" stroke-width="3"/>
-                        <line x1="0" y1="-30" x2="40" y2="0" stroke="#22c55e" stroke-width="3"/>
-                        <!-- Legs -->
-                        <line x1="0" y1="20" x2="-25" y2="80" stroke="#22c55e" stroke-width="3"/>
-                        <line x1="0" y1="20" x2="25" y2="80" stroke="#22c55e" stroke-width="3"/>
-                    </g>
-                    
-                    <!-- Zone labels -->
-                    <rect x="320" y="180" width="70" height="60" fill="none" stroke="#8b5cf6" stroke-width="2" rx="4"/>
-                    <text x="330" y="215" fill="#8b5cf6" font-size="11">sofa</text>
-                </svg>
-                <div class="skeleton-info" id="skeleton-info">
-                    zone: floor · torso 12° · still 0 s
-                </div>
-            </div>
-            
-            <!-- Event Status Card -->
-            <div class="event-card" id="event-card">
-                <div class="event-header">
-                    <span class="event-label">State:</span>
-                    <span class="event-state" id="event-state">MONITORING</span>
-                </div>
-                <div class="event-detail" id="event-detail">
-                    All quiet. GuardianBox is watching the living room.
-                </div>
-                <div class="event-actions" id="event-actions" style="display: none;">
-                    <select id="simulate-reply">
-                        <option value="">Simulate reply...</option>
-                        <option value="silence">Silence</option>
-                        <option value="ok_malay">OK (Malay)</option>
-                        <option value="ok_english">OK (English)</option>
-                        <option value="help_malay">Help (Malay)</option>
-                        <option value="unclear">Unclear</option>
-                    </select>
-                </div>
-            </div>
-        </section>
-
-        <!-- Right Panel: Pipeline Timeline -->
-        <section class="panel timeline-panel">
-            <h2>Pipeline Timeline</h2>
-            <div class="model-count" id="model-count">
-                5 AI roles · 4 models on this ATOM · 0 cloud AI calls
-            </div>
-            <div class="timeline" id="timeline">
-                <div class="timeline-empty">
-                    Events will appear here when activity is detected.
-                </div>
-            </div>
-            <div class="timeline-actions">
-                <button class="action-btn" id="export-btn">Export event.json</button>
-            </div>
-        </section>
-
-        <!-- Bottom Panel: ATOM Panel -->
-        <section class="panel atom-panel">
-            <h2>ATOM Panel</h2>
-            <div class="atom-grid">
-                <div class="atom-metric">
-                    <span class="metric-label">Memory</span>
-                    <div class="metric-bar">
-                        <div class="metric-fill" id="memory-bar" style="width: 58%"></div>
+    <main class="main-layout">
+        <!-- Left Column -->
+        <div class="left-column">
+            <!-- Live Footage Panel -->
+            <section class="panel footage-panel">
+                <div class="panel-header">
+                    <h2>Live View</h2>
+                    <div class="panel-controls">
+                        <select id="clip-selector" class="select-small">
+                            <option value="">Camera / Clip...</option>
+                        </select>
+                        <button class="btn btn-small" id="skeleton-toggle" title="Toggle skeleton overlay">☠</button>
                     </div>
-                    <span class="metric-value"><span id="memory-val">74</span>/128 GB</span>
                 </div>
-                <div class="atom-metric">
-                    <span class="metric-label">GPU</span>
-                    <div class="metric-bar">
-                        <div class="metric-fill gpu" id="gpu-bar" style="width: 18%"></div>
+                <div class="footage-container" id="footage-container">
+                    <div class="footage-placeholder" id="footage-placeholder">
+                        <div class="placeholder-icon">📹</div>
+                        <div class="placeholder-text">No video source</div>
+                        <div class="placeholder-hint">Select a camera or clip above, or set CAMERA_SOURCE</div>
                     </div>
-                    <span class="metric-value"><span id="gpu-val">18</span>%</span>
+                    <img id="footage-stream" class="footage-stream" style="display:none" alt="Live footage">
+                    <div class="footage-overlay" id="footage-overlay">
+                        <div class="pose-info" id="pose-info">
+                            <span class="pose-zone">zone: --</span>
+                            <span class="pose-angle">torso: --°</span>
+                            <span class="pose-still">still: --s</span>
+                        </div>
+                    </div>
                 </div>
-                <div class="atom-models" id="atom-models">
-                    <div class="model-item active">● Nemotron Omni (vLLM) ~45 GB</div>
-                    <div class="model-item active">● YOLO26n-pose ~2 GB</div>
-                    <div class="model-item active">● Malaysian Whisper ~4 GB</div>
-                    <div class="model-item active">● Kokoro-82M ~1.5 GB</div>
+            </section>
+
+            <!-- Resident Card -->
+            <section class="panel resident-panel">
+                <div class="panel-header">
+                    <h2>Resident</h2>
                 </div>
-                <div class="egress-detail">
-                    <span>Video bytes out: <strong id="video-bytes">0</strong></span>
-                    <span>Image bytes out: <strong id="image-bytes">0</strong></span>
+                <div class="resident-card">
+                    <div class="resident-avatar" id="resident-avatar">👴</div>
+                    <div class="resident-info">
+                        <div class="resident-name" id="resident-name">Pakcik Ahmad</div>
+                        <div class="resident-languages" id="resident-languages">ms, en</div>
+                    </div>
+                    <div class="resident-status" id="resident-status">
+                        <span class="status-dot active"></span>
+                        <span>Monitoring</span>
+                    </div>
                 </div>
-            </div>
-        </section>
+            </section>
+
+            <!-- Contacts Panel -->
+            <section class="panel contacts-panel">
+                <div class="panel-header">
+                    <h2>Family Contacts</h2>
+                    <button class="btn btn-small btn-primary" id="test-telegram-btn">📱 Test Message</button>
+                </div>
+                <div class="contacts-list" id="contacts-list">
+                    <div class="contact-item">
+                        <div class="contact-avatar">👨</div>
+                        <div class="contact-info">
+                            <div class="contact-name">Faiz (son)</div>
+                            <div class="contact-status">Telegram connected</div>
+                        </div>
+                        <span class="contact-priority">①</span>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- Center Column: Pipeline Timeline -->
+        <div class="center-column">
+            <section class="panel timeline-panel">
+                <div class="panel-header">
+                    <h2>Pipeline Timeline</h2>
+                    <div class="panel-controls">
+                        <span class="model-count" id="model-count">5 AI roles · 4 models</span>
+                        <button class="btn btn-small" id="clear-timeline-btn">Clear</button>
+                    </div>
+                </div>
+                
+                <!-- Demo Controls -->
+                <div class="demo-controls" id="demo-controls">
+                    <div class="demo-label">Run Demo:</div>
+                    <button class="demo-btn" data-scenario="fall" title="Fast fall with no response">🚨 Fall</button>
+                    <button class="demo-btn" data-scenario="slow_collapse" title="Slow collapse (chest pain)">💔 Slow Collapse</button>
+                    <button class="demo-btn" data-scenario="prayer" title="Prayer/sujud (should stay quiet)">🕌 Prayer</button>
+                    <button class="demo-btn" data-scenario="ok_reply" title="Fall with 'I'm OK' reply">✅ OK Reply</button>
+                    <button class="demo-btn" data-scenario="silence" title="Fall with silence → alert">🔇 Silence</button>
+                </div>
+
+                <!-- Timeline Stages -->
+                <div class="timeline-stages" id="timeline-stages">
+                    <div class="stage" id="stage-pose" data-status="pending">
+                        <div class="stage-icon">👁</div>
+                        <div class="stage-info">
+                            <div class="stage-name">Pose Detection</div>
+                            <div class="stage-detail" id="stage-pose-detail">Waiting for trigger...</div>
+                        </div>
+                        <div class="stage-time" id="stage-pose-time">--:--:--</div>
+                    </div>
+                    <div class="stage" id="stage-vlm" data-status="pending">
+                        <div class="stage-icon">🧠</div>
+                        <div class="stage-info">
+                            <div class="stage-name">VLM Verification</div>
+                            <div class="stage-detail" id="stage-vlm-detail">Waiting...</div>
+                        </div>
+                        <div class="stage-time" id="stage-vlm-time">--:--:--</div>
+                    </div>
+                    <div class="stage" id="stage-checkin" data-status="pending">
+                        <div class="stage-icon">🗣</div>
+                        <div class="stage-info">
+                            <div class="stage-name">Voice Check-in</div>
+                            <div class="stage-detail" id="stage-checkin-detail">Waiting...</div>
+                        </div>
+                        <div class="stage-time" id="stage-checkin-time">--:--:--</div>
+                    </div>
+                    <div class="stage" id="stage-stt" data-status="pending">
+                        <div class="stage-icon">🎤</div>
+                        <div class="stage-info">
+                            <div class="stage-name">Speech Recognition</div>
+                            <div class="stage-detail" id="stage-stt-detail">Waiting...</div>
+                        </div>
+                        <div class="stage-time" id="stage-stt-time">--:--:--</div>
+                    </div>
+                    <div class="stage" id="stage-decision" data-status="pending">
+                        <div class="stage-icon">⚖</div>
+                        <div class="stage-info">
+                            <div class="stage-name">Decision</div>
+                            <div class="stage-detail" id="stage-decision-detail">Waiting...</div>
+                        </div>
+                        <div class="stage-time" id="stage-decision-time">--:--:--</div>
+                    </div>
+                    <div class="stage" id="stage-alert" data-status="pending">
+                        <div class="stage-icon">📱</div>
+                        <div class="stage-info">
+                            <div class="stage-name">Telegram Alert</div>
+                            <div class="stage-detail" id="stage-alert-detail">Waiting...</div>
+                        </div>
+                        <div class="stage-time" id="stage-alert-time">--:--:--</div>
+                    </div>
+                </div>
+
+                <!-- Event Log -->
+                <div class="event-log" id="event-log">
+                    <div class="event-log-header">
+                        <span>Event Log</span>
+                        <button class="btn btn-icon btn-small" id="export-btn" title="Export event.json">📥</button>
+                    </div>
+                    <div class="event-log-list" id="event-log-list">
+                        <!-- Events populated by JS -->
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- Right Column: Telegram Preview -->
+        <div class="right-column">
+            <!-- Telegram Preview Panel -->
+            <section class="panel telegram-panel">
+                <div class="panel-header">
+                    <h2>Telegram Preview</h2>
+                    <span class="telegram-mode" id="telegram-mode">Mock Mode</span>
+                </div>
+                <div class="telegram-phone" id="telegram-phone">
+                    <div class="phone-header">
+                        <span class="phone-back">‹</span>
+                        <div class="phone-chat-info">
+                            <div class="phone-chat-name">GuardianBox Alert</div>
+                            <div class="phone-chat-status">bot</div>
+                        </div>
+                    </div>
+                    <div class="phone-messages" id="phone-messages">
+                        <div class="phone-empty">
+                            <span>📱</span>
+                            <p>Telegram messages will appear here</p>
+                            <p class="hint">Run a demo to see the alert flow</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Event History -->
+            <section class="panel history-panel">
+                <div class="panel-header">
+                    <h2>Event History</h2>
+                </div>
+                <div class="history-list" id="history-list">
+                    <div class="history-empty">No events yet</div>
+                </div>
+            </section>
+
+            <!-- System Status -->
+            <section class="panel system-panel">
+                <div class="panel-header">
+                    <h2>System</h2>
+                </div>
+                <div class="system-models" id="system-models">
+                    <div class="model-row">
+                        <span class="model-status active">●</span>
+                        <span class="model-name">Nemotron Omni</span>
+                        <span class="model-mem">~45 GB</span>
+                    </div>
+                    <div class="model-row">
+                        <span class="model-status active">●</span>
+                        <span class="model-name">YOLO26n-pose</span>
+                        <span class="model-mem">~2 GB</span>
+                    </div>
+                    <div class="model-row">
+                        <span class="model-status active">●</span>
+                        <span class="model-name">Malaysian Whisper</span>
+                        <span class="model-mem">~4 GB</span>
+                    </div>
+                    <div class="model-row">
+                        <span class="model-status active">●</span>
+                        <span class="model-name">Kokoro-82M</span>
+                        <span class="model-mem">~1.5 GB</span>
+                    </div>
+                </div>
+                <div class="system-stats">
+                    <div class="stat-row">
+                        <span>Video bytes out:</span>
+                        <strong class="stat-zero" id="video-bytes-out">0</strong>
+                    </div>
+                    <div class="stat-row">
+                        <span>Image bytes out:</span>
+                        <strong class="stat-zero" id="image-bytes-out">0</strong>
+                    </div>
+                </div>
+            </section>
+        </div>
     </main>
 
-    <!-- Demo Controls (presenter mode) -->
-    <aside class="demo-controls" id="demo-controls" style="display: none;">
-        <h3>Demo Controls</h3>
-        <div class="demo-buttons">
-            <button class="demo-btn" data-scenario="fall">🚨 Trigger Fall</button>
-            <button class="demo-btn" data-scenario="prayer">🕌 Trigger Prayer</button>
-            <button class="demo-btn" data-scenario="sitting">🪑 Trigger Sitting</button>
-            <button class="demo-btn" id="ack-btn">✅ Simulate Ack</button>
-            <button class="demo-btn" id="offline-btn">📴 Simulate Offline</button>
+    <!-- Toast Container -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <!-- Event Detail Modal -->
+    <div class="modal" id="event-modal" style="display:none">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Event Details</h3>
+                <button class="btn btn-icon modal-close" id="modal-close">×</button>
+            </div>
+            <div class="modal-body" id="modal-body">
+                <!-- Event details populated by JS -->
+            </div>
         </div>
-        <div class="demo-profile">
-            <label>
-                <input type="radio" name="profile" value="home" checked> Home (10s stillness)
-            </label>
-            <label>
-                <input type="radio" name="profile" value="demo"> Demo (3s stillness)
-            </label>
-        </div>
-    </aside>
+    </div>
 
     <script src="/static/js/dashboard.js"></script>
 </body>
