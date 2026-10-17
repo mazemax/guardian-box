@@ -2,9 +2,19 @@
 
 **Local fall detection and voice check-in for elderly parents — the video never leaves the house.**
 
+**Team:** Token Titans
+
 <p align="center">
   <strong>ACE 2026 Mini Hackathon — "LOCAL AI, REAL PROBLEMS"</strong>
 </p>
+
+---
+
+## Screenshots
+
+Dashboard during a simulated fall alert, running in mock mode. The state is ALERTING, the timeline shows the full flow from MONITORING to ALERTING, and video and image bytes out stay at 0.
+
+![GuardianBox dashboard in ALERTING state during a simulated fall](docs/screenshots/dashboard-alert.png)
 
 ---
 
