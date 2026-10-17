@@ -5,9 +5,10 @@ Provides message formatting, callback parsing, and inline keyboard building
 for GuardianBox Telegram alerts.
 """
 
+import os
 import re
-from datetime import datetime
-from typing import Tuple, Optional
+from datetime import datetime, timezone
+from typing import Tuple, Optional, List
 
 
 def format_alert_message(
@@ -139,12 +140,69 @@ def redact_token(text: str) -> str:
     return re.sub(token_pattern, "bot[REDACTED]", text)
 
 
+def get_telegram_chat_ids_from_env() -> List[str]:
+    """Parse TELEGRAM_CHAT_IDS from the environment."""
+    chat_ids_str = os.getenv("TELEGRAM_CHAT_IDS", "")
+    return [cid.strip() for cid in chat_ids_str.split(",") if cid.strip()]
+
+
+def telegram_live_in_mock_enabled() -> bool:
+    """When MOCK_MODE is on, still send real Telegram if true (default)."""
+    return os.getenv("TELEGRAM_LIVE_IN_MOCK", "true").lower() == "true"
+
+
+def telegram_credentials_configured() -> bool:
+    """True when bot token and at least one chat ID are set."""
+    token = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    return bool(token) and bool(get_telegram_chat_ids_from_env())
+
+
+def should_send_live_telegram(mock_mode: bool) -> bool:
+    """Whether alerts/tests should hit the notifier (real Telegram)."""
+    if not telegram_credentials_configured():
+        return False
+    if not mock_mode:
+        return True
+    return telegram_live_in_mock_enabled()
+
+
 def build_test_message() -> str:
     """Build a test message for Telegram integration testing."""
     return (
         "🧪 Test message from GuardianBox\n\n"
         "If you receive this, Telegram alerts are working!"
     )
+
+
+def build_test_message_markdown() -> str:
+    """MarkdownV2 test message for Telegram sendMessage."""
+    from .markdown_v2 import escape_markdown_v2
+
+    title = escape_markdown_v2("Test message from GuardianBox")
+    time_str = escape_markdown_v2(
+        datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    )
+    return (
+        f"🧪 *{title}*\n\n"
+        "If you receive this, Telegram alerts are working\\!\n\n"
+        f"Time: {time_str} UTC"
+    )
+
+
+def format_alert_markdown_v2(plain_text: str) -> str:
+    """Escape a full alert body for MarkdownV2 (no HTML)."""
+    from .markdown_v2 import escape_markdown_v2
+
+    return escape_markdown_v2(plain_text)
+
+
+def build_resolved_telegram_text(action: Optional[str] = None) -> str:
+    """Short text for editMessageText when an event is resolved."""
+    if action == "false_alarm":
+        return "✅ <b>Resolved</b> — marked as false alarm."
+    if action in {"calling", "on_my_way"}:
+        return "✅ <b>Resolved</b> — family is responding."
+    return "✅ <b>Resolved</b> — event closed."
 
 
 def build_start_response(chat_id: int) -> str:

@@ -15,8 +15,12 @@ import asyncio
 import logging
 import hmac
 import hashlib
+import json
+import re
 from datetime import datetime, timezone
 from typing import Optional, Dict, List, Any
+
+from markdown_v2 import escape_markdown_v2, validate_markdown_v2_with_bold_spans
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
@@ -29,7 +33,8 @@ logger = logging.getLogger(__name__)
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 MOCK_MODE = os.getenv("MOCK_MODE", "false").lower() == "true"
-EGRESS_PROXY_URL = os.getenv("EGRESS_PROXY_URL", "http://egress-proxy:8004")
+TELEGRAM_LIVE_IN_MOCK = os.getenv("TELEGRAM_LIVE_IN_MOCK", "true").lower() == "true"
+EGRESS_PROXY_URL = os.getenv("EGRESS_PROXY_URL", "http://egress-proxy:8004").rstrip("/")
 
 
 ALLOWED_METHODS = frozenset([
@@ -62,6 +67,8 @@ egress_log: List[Dict] = []
 callback_handlers: Dict[str, Dict] = {}
 last_update_id = 0
 http_client: Optional[httpx.AsyncClient] = None
+poll_conflict: bool = False
+poll_conflict_warning_logged: bool = False
 
 
 class SendAlertRequest(BaseModel):
@@ -75,6 +82,10 @@ class SendAlertRequest(BaseModel):
 
 class AckCallbackRequest(BaseModel):
     callback_query_id: str
+
+
+class TestSendRequest(BaseModel):
+    chat_ids: List[str]
 
 
 class PayloadGuardError(Exception):
@@ -93,6 +104,61 @@ def sign_callback_data(event_id: str, action: str) -> str:
         ).hexdigest()[:8]
         return f"{data}:{signature}"
     return data
+
+
+def telegram_api_live() -> bool:
+    """Use real Telegram API (via egress proxy) when token is configured."""
+    if not TELEGRAM_BOT_TOKEN:
+        return False
+    if not MOCK_MODE:
+        return True
+    return TELEGRAM_LIVE_IN_MOCK
+
+
+def build_test_message_markdown() -> str:
+    title = escape_markdown_v2("Test message from GuardianBox")
+    time_str = escape_markdown_v2(
+        datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    )
+    message = (
+        f"🧪 *{title}*\n\n"
+        "If you receive this, Telegram alerts are working\\!\n\n"
+        f"Time: {time_str} UTC"
+    )
+    issues = validate_markdown_v2_with_bold_spans(message)
+    if issues:
+        logger.warning("Test message MarkdownV2 validation: %s", issues)
+    return message
+
+
+def sanitize_telegram_error(description: Optional[str]) -> str:
+    """Return a safe error string (never includes the bot token)."""
+    if not description:
+        return "Unknown error"
+    text = description
+    if TELEGRAM_BOT_TOKEN:
+        text = text.replace(TELEGRAM_BOT_TOKEN, "[REDACTED]")
+    text = re.sub(r"\d{8,}:[A-Za-z0-9_-]{20,}", "[REDACTED]", text)
+    return text
+
+
+def note_poll_conflict(description: Optional[str] = None) -> None:
+    global poll_conflict, poll_conflict_warning_logged
+    poll_conflict = True
+    if not poll_conflict_warning_logged:
+        poll_conflict_warning_logged = True
+        detail = sanitize_telegram_error(description)
+        logger.warning(
+            "Telegram getUpdates returned 409 Conflict (%s). "
+            "Another process is polling this bot token; backing off until it clears.",
+            detail,
+        )
+
+
+def clear_poll_conflict() -> None:
+    global poll_conflict, poll_conflict_warning_logged
+    poll_conflict = False
+    poll_conflict_warning_logged = False
 
 
 def verify_callback_data(callback_data: str) -> tuple[str, str, bool]:
@@ -191,7 +257,7 @@ async def call_telegram_api(method: str, params: Dict) -> Dict:
         logger.warning(error_msg)
         raise PayloadGuardError(error_msg)
     
-    if MOCK_MODE:
+    if not telegram_api_live():
         logger.info(f"[MOCK] Telegram API call: {method}")
         egress_log.append({
             "at": datetime.now(timezone.utc).isoformat(),
@@ -218,29 +284,58 @@ async def call_telegram_api(method: str, params: Dict) -> Dict:
     
     client = await get_client()
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/{method}"
+    body = json.dumps(params)
     
     try:
-        response = await client.post(url, json=params)
-        response_data = response.json()
+        if EGRESS_PROXY_URL:
+            proxy_response = await client.post(
+                f"{EGRESS_PROXY_URL}/proxy",
+                json={
+                    "method": "POST",
+                    "url": url,
+                    "headers": {"Content-Type": "application/json"},
+                    "body": body,
+                },
+            )
+            if proxy_response.status_code != 200:
+                raise HTTPException(
+                    status_code=proxy_response.status_code,
+                    detail="Egress proxy request failed",
+                )
+            wrapped = proxy_response.json()
+            response_data = json.loads(wrapped.get("content", "{}"))
+            bytes_in = len(wrapped.get("content", ""))
+        else:
+            response = await client.post(url, json=params)
+            response_data = response.json()
+            bytes_in = len(response.content)
         
         egress_log.append({
             "at": datetime.now(timezone.utc).isoformat(),
             "host": "api.telegram.org",
             "method": method,
-            "bytes_out": len(str(params)),
-            "bytes_in": len(response.content),
+            "bytes_out": len(body),
+            "bytes_in": bytes_in,
             "allowed": True,
         })
+
+        if method == "getUpdates":
+            if response_data.get("ok"):
+                clear_poll_conflict()
+            elif response_data.get("error_code") == 409:
+                note_poll_conflict(response_data.get("description"))
         
         return response_data
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Telegram API error: {e}")
         egress_log.append({
             "at": datetime.now(timezone.utc).isoformat(),
             "host": "api.telegram.org",
             "method": method,
-            "bytes_out": len(str(params)),
+            "bytes_out": len(body),
             "bytes_in": 0,
             "allowed": True,
             "error": str(e),
@@ -254,7 +349,38 @@ async def health():
         "status": "healthy",
         "mock_mode": MOCK_MODE,
         "token_configured": bool(TELEGRAM_BOT_TOKEN),
+        "poll_conflict": poll_conflict,
     }
+
+
+@app.post("/test")
+async def send_test(req: TestSendRequest):
+    """Send a test message to one or more chat IDs (no token in request/response)."""
+    test_message = build_test_message_markdown()
+    results = []
+    for chat_id in req.chat_ids:
+        try:
+            result = await call_telegram_api("sendMessage", {
+                "chat_id": chat_id,
+                "text": test_message,
+                "parse_mode": "MarkdownV2",
+            })
+            if result.get("ok"):
+                results.append({"chat_id": chat_id, "ok": True})
+            else:
+                results.append({
+                    "chat_id": chat_id,
+                    "ok": False,
+                    "error": sanitize_telegram_error(result.get("description")),
+                })
+        except Exception as e:
+            logger.error(f"Test message failed for chat {chat_id}: {e}")
+            results.append({
+                "chat_id": chat_id,
+                "ok": False,
+                "error": sanitize_telegram_error(str(e)),
+            })
+    return {"results": results}
 
 
 @app.post("/send")
@@ -352,6 +478,19 @@ async def poll_updates():
             "timeout": 30,
             "allowed_updates": ["callback_query"],
         })
+
+        if not result.get("ok"):
+            if result.get("error_code") == 409:
+                return {
+                    "updates": [],
+                    "poll_conflict": True,
+                    "error": sanitize_telegram_error(result.get("description")),
+                }
+            return {
+                "updates": [],
+                "poll_conflict": poll_conflict,
+                "error": sanitize_telegram_error(result.get("description")),
+            }
         
         updates = result.get("result", [])
         callbacks = []
@@ -372,7 +511,7 @@ async def poll_updates():
                         "chat_id": str(cq["message"]["chat"]["id"]),
                     })
         
-        return {"updates": callbacks}
+        return {"updates": callbacks, "poll_conflict": poll_conflict}
         
     except PayloadGuardError as e:
         raise HTTPException(status_code=400, detail=str(e))

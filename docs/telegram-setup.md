@@ -28,21 +28,22 @@ GuardianBox can send real-time alerts to family members via Telegram when a fall
 ## Step 2: Get Your Chat ID
 
 1. Open a chat with your new bot
-2. Send `/start` to the bot
-3. The bot will reply with your chat ID, like:
-   ```
-   Your chat ID is: 987654321
+2. Send `/start` to the bot (or any message)
+3. Discover your chat ID with `getUpdates` (no need to paste the token into the dashboard):
+
+   ```bash
+   # On the Spark (token only in .env, not echoed here)
+   source .env
+   curl -s "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates" | jq '.result[-1].message.chat.id'
    ```
 
-**Alternative method** (if the bot doesn't respond to /start yet):
+   Or open in a browser after substituting your token locally:
 
-1. Send any message to the bot
-2. Open this URL in your browser (replace `YOUR_BOT_TOKEN`):
    ```
    https://api.telegram.org/botYOUR_BOT_TOKEN/getUpdates
    ```
-3. Look for `"chat":{"id":987654321}` in the response
-4. That number is your chat ID
+
+4. Look for `"chat":{"id":987654321}` — that number is your chat ID
 
 ---
 
@@ -55,12 +56,17 @@ cd ~/guardian-box
 nano .env
 ```
 
-Add these lines (using your actual token and chat ID):
+Add these lines (using your actual token and chat ID). Save `.env` with **Unix (LF) line endings** — CRLF from some editors can break Docker env parsing.
 
 ```env
+MOCK_MODE=true
 TELEGRAM_BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrSTUvwxYZ
 TELEGRAM_CHAT_IDS=987654321
+TELEGRAM_LIVE_IN_MOCK=true
+CAMERA_SOURCE=/samples/clip2.mp4
 ```
+
+`MOCK_MODE=true` uses sample clips and mock VLM/STT/voice for demos, but with `TELEGRAM_LIVE_IN_MOCK=true` (default) **real Telegram alerts** still go to your phone. Set `TELEGRAM_LIVE_IN_MOCK=false` for preview-only Telegram on the dashboard.
 
 For multiple family contacts, separate chat IDs with commas:
 
@@ -74,10 +80,19 @@ TELEGRAM_CHAT_IDS=987654321,123456789,555555555
 
 ## Step 4: Restart the Services
 
+On **DGX Spark**, Docker bridge networks often have no outbound internet. Use the Spark compose override so `egress-proxy` runs with host networking:
+
 ```bash
 cd ~/guardian-box
+docker compose -f docker-compose.yml -f docker-compose.spark.yml --profile mock down
+docker compose -f docker-compose.yml -f docker-compose.spark.yml --profile mock up -d
+```
+
+On other hosts:
+
+```bash
 docker compose down
-docker compose up -d
+docker compose --profile mock up -d
 ```
 
 Or restart just the affected services:
@@ -120,22 +135,23 @@ Expected response:
 
 ---
 
-## Step 6: Run the Full Demo
+## Step 6: Run the Full Demo (tested on Spark)
 
 1. Open the dashboard at `http://<spark-ip>:8080`
-2. Click **"🚨 Fall"** in the demo controls
-3. Watch the pipeline timeline progress:
+2. Confirm **Send test message** delivered a real Telegram ping (Step 5)
+3. Click **"🚨 Fall"** in the demo controls
+4. Watch the pipeline timeline progress:
    - Pose trigger fires
-   - VLM confirms fall
-   - Voice check-in asks "Are you okay?"
+   - VLM confirms fall (mock)
+   - Voice check-in asks "Are you okay?" (mock)
    - After silence, alert is sent
-4. Check your Telegram — you should receive an alert with buttons:
-   - 📞 Calling
-   - 🏃 On my way
+5. The dashboard still shows the **Telegram preview** panel; your phone receives the **real** alert with buttons:
+   - 📞 I'm calling now
+   - 🚗 On my way
    - ✅ False alarm
-   - 🆘 999 info
-5. Tap a button to acknowledge
-6. The dashboard timeline should update with your response
+   - ❓ Need more info
+6. Tap **Acknowledge** on Telegram (or use the dashboard preview buttons)
+7. The dashboard timeline should update with your response; the Telegram message is edited to show resolved
 
 ---
 
@@ -143,10 +159,13 @@ Expected response:
 
 If `TELEGRAM_BOT_TOKEN` is not set, the dashboard shows a "Telegram Preview" panel on the right. This displays exactly what would be sent to Telegram, with clickable buttons that drive the same acknowledgement flow.
 
+With a token configured and `MOCK_MODE=true`, the preview panel **and** real Telegram delivery can both be active (`TELEGRAM_LIVE_IN_MOCK=true`).
+
 This is useful for:
 - Demos without Telegram setup
 - Testing the UI flow
 - Understanding what family members see
+- Spark demos with sample video but real family alerts
 
 ---
 
@@ -183,7 +202,17 @@ When family taps a button:
 | ✅ False alarm | `false_alarm` | Marked as false positive, event resolved |
 | 🆘 999 info | `call_999_info` | Shows emergency services info (Malaysia 999) |
 
-Button presses are received via long-polling `getUpdates` and mapped to the `/api/v1/demo/ack` endpoint, updating the dashboard in real-time.
+Button presses are received via long-polling `getUpdates` (notifier `/poll`, orchestrator background task) and resolve the event the same way as dashboard **Acknowledge** (`handle_acknowledgement`).
+
+---
+
+## One bot token, one poller
+
+Telegram allows only **one** active `getUpdates` long-poll per bot token. If another GuardianBox instance, a second Spark stack, or a stray dev container is polling the same token, you may see `409 Conflict` in notifier logs.
+
+- Notifier `/health` reports `poll_conflict: true` when this happens.
+- GuardianBox backs off polling until the conflict clears.
+- **Fix:** stop the other instance, or use a separate bot token per deployment.
 
 ---
 
