@@ -176,12 +176,24 @@ def build_test_message() -> str:
 
 def build_test_message_markdown() -> str:
     """MarkdownV2 test message for Telegram sendMessage."""
-    time_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    from .markdown_v2 import escape_markdown_v2
+
+    title = escape_markdown_v2("Test message from GuardianBox")
+    time_str = escape_markdown_v2(
+        datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    )
     return (
-        "🧪 *Test message from GuardianBox*\n\n"
+        f"🧪 *{title}*\n\n"
         "If you receive this, Telegram alerts are working\\!\n\n"
         f"Time: {time_str} UTC"
     )
+
+
+def format_alert_markdown_v2(plain_text: str) -> str:
+    """Escape a full alert body for MarkdownV2 (no HTML)."""
+    from .markdown_v2 import escape_markdown_v2
+
+    return escape_markdown_v2(plain_text)
 
 
 def build_resolved_telegram_text(action: Optional[str] = None) -> str:

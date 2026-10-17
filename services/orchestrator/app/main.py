@@ -144,7 +144,11 @@ async def _telegram_callback_poll_loop():
                     timeout=httpx.Timeout(60.0, connect=10.0),
                 )
                 if response.status_code == 200:
-                    for callback in response.json().get("updates", []):
+                    poll_data = response.json()
+                    if poll_data.get("poll_conflict"):
+                        await asyncio.sleep(60)
+                        continue
+                    for callback in poll_data.get("updates", []):
                         event_id = callback.get("event_id")
                         action = callback.get("action")
                         chat_id = callback.get("chat_id", "default")

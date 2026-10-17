@@ -206,6 +206,16 @@ Button presses are received via long-polling `getUpdates` (notifier `/poll`, orc
 
 ---
 
+## One bot token, one poller
+
+Telegram allows only **one** active `getUpdates` long-poll per bot token. If another GuardianBox instance, a second Spark stack, or a stray dev container is polling the same token, you may see `409 Conflict` in notifier logs.
+
+- Notifier `/health` reports `poll_conflict: true` when this happens.
+- GuardianBox backs off polling until the conflict clears.
+- **Fix:** stop the other instance, or use a separate bot token per deployment.
+
+---
+
 ## Troubleshooting
 
 ### "Failed to send test message"
